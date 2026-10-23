@@ -103,7 +103,7 @@ const humanFlag = (f: string) => {
 };
 
 const statusLabel: Record<d.CaseStatus, string> = {
-  open: "Checking", resolved: "Resolved by desk", awaiting_owner: "Awaiting decision", approved: "Approved",
+  open: "Checking", resolved: "Resolved by the agent", awaiting_owner: "Awaiting decision", approved: "Approved",
   rejected: "Rejected", expired: "Expired (escalated)", approval_blocked: "Blocked: needs ops", approval_failed: "Failed: needs ops",
 };
 
@@ -171,7 +171,7 @@ consoleRouter.get("/", requireLogin, async (req: Authed, res) => {
   const byAgent = claims.filter((c) => c.claim?.decision?.by === d.AGENT && c.status === "approved").slice(0, 20);
   const decided = claims.filter((c) => ["approved", "rejected"].includes(c.status) && c.claim?.decision?.by !== d.AGENT).slice(0, 20);
   const body = `<h1>Claims</h1>
-    <div class="card"><h2 style="margin-top:0">Awaiting decision (${pending.length})</h2>${await table(pending, "Nothing waiting. The desk resolves most cases on its own.")}</div>
+    <div class="card"><h2 style="margin-top:0">Awaiting decision (${pending.length})</h2>${await table(pending, "Nothing waiting. The agent resolves most cases on its own.")}</div>
     <div class="card"><h2 style="margin-top:0">Needs attention (${attention.length})</h2>${await table(attention, "Nothing needs attention.")}</div>
     <div class="card"><h2 style="margin-top:0">Refunded by the agent</h2>${await table(byAgent, "No agent refunds yet.")}</div>
     <div class="card"><h2 style="margin-top:0">Decided by the team</h2>${await table(decided, "No decisions yet.")}</div>
@@ -205,7 +205,7 @@ consoleRouter.get("/case/:ref", requireLogin, async (req: Authed, res) => {
       ${cl.decision ? `<p class="muted">Reason: ${esc(cl.decision.reason)}</p>` : ""}
       <h2>Rider says</h2><p>"${esc(cl.statement)}"</p>
       <h2>Evidence (computed by the server)</h2><ul>${(cl.flags ?? []).length ? (cl.flags ?? []).map((f) => `<li>${esc(humanFlag(f))}</li>`).join("") : "<li>No risk flags</li>"}</ul>
-      <h2>Recommendation</h2><p>${esc(cl.recommendation)}</p></div>` : `<div class="card"><p class="muted">No claim on this case; the desk handled it.</p></div>`}
+      <h2>Recommendation</h2><p>${esc(cl.recommendation)}</p></div>` : `<div class="card"><p class="muted">No claim on this case; the agent handled it.</p></div>`}
     ${decide}
     <div class="card"><h2 style="margin-top:0">Rider and payment</h2><div class="grid">
       <div><div class="k">Rider</div>${esc(customer?.name)} · account ${ageDays} days old</div>
@@ -278,7 +278,7 @@ consoleRouter.get("/report", requireLogin, async (req: Authed, res) => {
   const body = `<h1>Daily exceptions report · ${esc(r.date)}</h1>
     <div class="card"><div class="grid">
       <div><div class="k">Cases today</div><b>${r.cases_today}</b></div>
-      <div><div class="k">Wallets credited by the desk</div><b>${r.auto_resolved.wallets_credited}</b></div>
+      <div><div class="k">Wallets credited by the agent</div><b>${r.auto_resolved.wallets_credited}</b></div>
       <div><div class="k">Explained, no action needed</div><b>${r.auto_resolved.explained_no_action_needed}</b></div>
       <div><div class="k">Refunded by the agent today</div><b>${r.agent_refunds_today.count} · ${esc(r.agent_refunds_today.total)}</b></div>
       <div><div class="k">Team approved / rejected today</div><b>${r.decisions_today.approved} / ${r.decisions_today.rejected}</b></div>
