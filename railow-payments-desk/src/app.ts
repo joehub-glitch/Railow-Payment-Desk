@@ -7,7 +7,7 @@ import { buildMcpServer } from "./mcp.js";
 import { config } from "./config.js";
 import { store, storeKind } from "./store.js";
 import { seed, livePaymentPlan, type ScenarioKey } from "./seed.js";
-import { initializePayment } from "./paystack.js";
+import { initializePayment, pingPaystack } from "./paystack.js";
 
 export const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -38,7 +38,7 @@ app.post("/mcp", bearer(config.mcpBearerToken), async (req, res) => {
 app.get("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ error: "method_not_allowed" }));
 app.delete("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ error: "method_not_allowed" }));
 
-app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.2", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
+app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.3", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
 
 // Owner inbox: the out-of-band messages (with approval codes) for demos without email set up.
 app.get("/ops/inbox", opsOnly, async (_req, res) => res.json(await store.listAll("owner_inbox")));
@@ -48,6 +48,9 @@ app.get("/ops/inbox", opsOnly, async (_req, res) => res.json(await store.listAll
 // Step 2: pay each link with the card shown.
 // Step 3: /ops/reseed?token=...      loads the demo riders using those references.
 // Run /ops/reseed again any time to reset the demo between recordings.
+
+// Hide credentials embedded in URLs (e.g. rediss://user:password@host) before showing any error.
+const redact = (s: string) => s.replace(/\/\/[^\s/@"]+@/g, "//***@").replace(/sk_(test|live)_\w+/g, "sk_$1_***");
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
@@ -90,3 +93,34 @@ const reseed = async (req: Request, res: Response) => {
 };
 app.get("/ops/reseed", opsOnly, reseed);
 app.post("/ops/reseed", opsOnly, reseed);
+
+// Checks every dependency and says in plain words what is wrong. Never prints secret values.
+app.get("/ops/diagnose", opsOnly, async (_req, res) => {
+  const url = process.env.UPSTASH_REDIS_REST_URL ?? "";
+  const key = process.env.PAYSTACK_SECRET_KEY ?? "";
+  const env = {
+    PAYSTACK_MODE: config.paystackMode,
+    PAYSTACK_SECRET_KEY: !key ? "missing" : key.startsWith("sk_test_") ? "set (test key)" : key.startsWith("sk_live_") ? "LIVE KEY: replace with a test key" : "set, but does not start with sk_test_",
+    UPSTASH_REDIS_REST_URL: !url ? "missing" : url.startsWith("https://") ? "set" : "WRONG: must be the REST URL starting with https:// (not redis:// or rediss://)",
+    UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN ? "set" : "missing",
+    MCP_BEARER_TOKEN: config.mcpBearerToken ? "set" : "missing",
+  };
+  let database: { ok: boolean; detail: string };
+  try {
+    await store.set("diag", Date.now());
+    database = (await store.get("diag")) ? { ok: true, detail: `read/write works (${storeKind})` } : { ok: false, detail: "write succeeded but read returned nothing" };
+  } catch (e) {
+    database = { ok: false, detail: redact(String((e as Error)?.message ?? e)).slice(0, 300) };
+  }
+  let paystack: { ok: boolean; detail: string };
+  try { paystack = await pingPaystack(); } catch (e) { paystack = { ok: false, detail: redact(String((e as Error)?.message ?? e)).slice(0, 300) }; }
+  res.json({ version: "2026-10-23.3", env, database, paystack });
+});
+
+// Last resort: log the error, and on ops pages show the reason instead of a bare 500.
+app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+  console.error("[unhandled]", req.path, err);
+  if (res.headersSent) return;
+  const detail = req.path.startsWith("/ops") ? redact(String((err as Error)?.message ?? err)).slice(0, 300) : undefined;
+  res.status(500).json({ error: "internal_error", detail, hint: req.path.startsWith("/ops") ? "Open /ops/diagnose?token=... to check each dependency." : undefined });
+});

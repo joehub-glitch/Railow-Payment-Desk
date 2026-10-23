@@ -102,3 +102,14 @@ export async function initializePayment(email: string, amountKobo: number, refer
   if (r.kind !== "response" || !r.body?.status) throw new Error(`initialize failed: ${JSON.stringify(r)}`);
   return r.body.data.authorization_url as string;
 }
+
+// Diagnostic only: confirms the key works without exposing it.
+export async function pingPaystack() {
+  const r = await call(`/transaction?perPage=1`);
+  if (r.kind === "not_configured") return { ok: false, detail: "PAYSTACK_SECRET_KEY is not set" };
+  if (r.kind === "timeout") return { ok: false, detail: "Paystack did not answer in time" };
+  if (r.kind === "network") return { ok: false, detail: r.detail };
+  return r.body?.status
+    ? { ok: true, detail: "key accepted" }
+    : { ok: false, detail: `HTTP ${r.httpStatus}: ${r.body?.message ?? "rejected"}` };
+}
