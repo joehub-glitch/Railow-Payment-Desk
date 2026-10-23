@@ -1,6 +1,5 @@
-// Reaches the owner OUTSIDE the WhatsApp conversation. This is what keeps approval codes away
-// from the AI agent: the code goes from this server straight to the owner, never through a tool
-// result the model can read or repeat.
+// Tells the payments team, outside the WhatsApp conversation, that a claim is waiting in the Ops
+// Console. Alerts carry no codes and no action links: decisions happen only behind the console login.
 
 import { config } from "./config.js";
 import { store } from "./store.js";

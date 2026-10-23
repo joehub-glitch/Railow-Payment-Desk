@@ -20,13 +20,30 @@ export const config = {
   repeatClaimWindowDays: num(process.env.REPEAT_CLAIM_WINDOW_DAYS, 30),
   duplicateWindowMinutes: num(process.env.DUPLICATE_WINDOW_MINUTES, 10),
 
-  // Owner approval codes.
-  codeTtlHours: num(process.env.CODE_TTL_HOURS, 24),
-  codeMaxAttempts: num(process.env.CODE_MAX_ATTEMPTS, 3),
+  // Rider verification: one-time code sent to the phone registered on the Railow account.
+  otpTtlMinutes: num(process.env.OTP_TTL_MINUTES, 10),
+  otpMaxAttempts: num(process.env.OTP_MAX_ATTEMPTS, 3),
+  otpMaxSendsPerWindow: num(process.env.OTP_MAX_SENDS, 3), // per phone, per 15 minutes
+  sessionTtlMinutes: num(process.env.SESSION_TTL_MINUTES, 15),
+
+  // Agent refund authority. The business sets the limit in Chord (MCP server -> Custom headers:
+  // "X-Railow-Agent-Refund-Limit: 100,000"). Missing or 0 means agent refunds are off. The server
+  // never allows more than this hard ceiling, whatever the header says.
+  agentRefundHardCapKobo: num(process.env.AGENT_REFUND_HARD_CAP_KOBO, 100_000_00), // ₦100,000
+  agentRefundWindowDays: num(process.env.AGENT_REFUND_WINDOW_DAYS, 30),            // one agent refund per rider per window
+
+  // Maker-checker approvals in the Ops Console.
+  fourEyesKobo: num(process.env.FOUR_EYES_KOBO, 50_000_00), // ₦50,000 and above needs two approvers
+  claimTtlHours: num(process.env.CLAIM_TTL_HOURS, 24),      // undecided claims expire
+  consoleSessionHours: num(process.env.CONSOLE_SESSION_HOURS, 8),
+  approvers: [
+    { id: "ops-lead", name: "Ops Lead", password: clean(process.env.APPROVER_OPS_LEAD_PASSWORD) },
+    { id: "finance", name: "Finance", password: clean(process.env.APPROVER_FINANCE_PASSWORD) },
+  ].filter((a) => a.password),
 
   // Shared secret Chord sends as "Authorization: Bearer ..." when calling this server.
   mcpBearerToken: clean(process.env.MCP_BEARER_TOKEN),
-  // Protects the small ops endpoints (owner inbox, reseed).
+  // Protects the small developer endpoints (diagnose, seeding).
   opsToken: clean(process.env.OPS_TOKEN),
 
   // Optional ways to reach the owner outside the WhatsApp chat.

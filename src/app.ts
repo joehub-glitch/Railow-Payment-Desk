@@ -8,6 +8,8 @@ import { config } from "./config.js";
 import { store, storeKind } from "./store.js";
 import { seed, livePaymentPlan, type ScenarioKey } from "./seed.js";
 import { initializePayment, pingPaystack } from "./paystack.js";
+import { consoleRouter } from "./console.js";
+import { LIMIT_HEADER, effectivePolicy, parsePolicy, recordPolicySeen } from "./policy.js";
 
 export const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -23,7 +25,11 @@ const opsOnly = (req: Request, res: Response, next: NextFunction) => {
 };
 
 app.post("/mcp", bearer(config.mcpBearerToken), async (req, res) => {
-  const server = buildMcpServer();
+  // The refund limit comes from the custom header the business set on this server in Chord.
+  // The ops team's console switch can only make it stricter.
+  const chord = parsePolicy(req.headers[LIMIT_HEADER]);
+  await recordPolicySeen(chord).catch((e) => console.error("[policy] could not record", e));
+  const server = buildMcpServer(await effectivePolicy(chord));
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on("close", () => { transport.close(); server.close(); });
   try {
@@ -38,9 +44,13 @@ app.post("/mcp", bearer(config.mcpBearerToken), async (req, res) => {
 app.get("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ error: "method_not_allowed" }));
 app.delete("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ error: "method_not_allowed" }));
 
-app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.5", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
+// The Ops Console (maker-checker approvals). Approvers sign in at /console.
+app.use("/console", consoleRouter);
+app.get("/", (_req, res) => res.redirect(302, "/console"));
 
-// Owner inbox: the out-of-band messages (with approval codes) for demos without email set up.
+app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.8", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
+
+// Alert log: copies of the "claim needs review" alerts, for demos without email set up.
 app.get("/ops/inbox", opsOnly, async (_req, res) => res.json(await store.listAll("owner_inbox")));
 
 // --- Demo seeding from the browser (no local setup, the Paystack key never leaves the server) ---
@@ -109,6 +119,7 @@ app.get("/ops/diagnose", opsOnly, async (_req, res) => {
     DATABASE_URL: !url ? "missing" : !url.startsWith("https://") ? "WRONG: must be the REST URL starting with https:// (not redis:// or rediss://)" : `set (host ${host})${raw !== url ? ", cleaned stray spaces/quotes/slash" : ""}${new URL(url).pathname !== "/" ? " WARNING: has a path after the host; use only https://<name>.upstash.io" : ""}`,
     DATABASE_TOKEN: config.upstashToken ? "set" : "missing",
     MCP_BEARER_TOKEN: config.mcpBearerToken ? "set" : "missing",
+    APPROVERS: config.approvers.map((a) => a.name).join(", ") || "none: set APPROVER_OPS_LEAD_PASSWORD and APPROVER_FINANCE_PASSWORD",
   };
   // Raw check, bypassing the client library: Upstash Redis answers ["PING"] with {"result":"PONG"}.
   let upstash_raw: { http_status?: number; reply?: string; error?: string } = {};
@@ -127,7 +138,7 @@ app.get("/ops/diagnose", opsOnly, async (_req, res) => {
   }
   let paystack: { ok: boolean; detail: string };
   try { paystack = await pingPaystack(); } catch (e) { paystack = { ok: false, detail: redact(String((e as Error)?.message ?? e)).slice(0, 300) }; }
-  res.json({ version: "2026-10-23.5", env, upstash_raw, database, paystack });
+  res.json({ version: "2026-10-23.8", env, upstash_raw, database, paystack });
 });
 
 // Last resort: log the error, and on ops pages show the reason instead of a bare 500.
