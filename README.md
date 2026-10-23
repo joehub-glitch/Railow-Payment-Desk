@@ -138,7 +138,7 @@ Here that system is the **Railow Ops Console** (`/console`):
 
 ```bash
 npm install
-npm test        # 98 end-to-end checks over real MCP/HTTP and the console, mock mode, no keys needed
+npm test        # 105 end-to-end checks over real MCP/HTTP and the console, mock mode, no keys needed
 npm run dev     # MCP at http://localhost:3000/mcp, console at /console, demo riders seeded
 ```
 
@@ -234,6 +234,7 @@ skill/railow-payments-desk/   SKILL.md + references/policy.md (upload to Chord)
 src/domain.ts                verification and all money rules
 src/console.ts               Ops Console (approvals, agent refund settings, audit, report)
 src/policy.ts                agent refund authority (Chord header + console controls)
+src/conversation.ts          verify once per chat: binds verification to the conversation id Chord sends
 src/mcp.ts                   tool definitions Chord sees
 src/paystack.ts              Paystack client (live test mode / simulated)
 src/app.ts, api/index.ts     HTTP + Vercel entry

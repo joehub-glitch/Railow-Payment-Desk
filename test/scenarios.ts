@@ -328,6 +328,36 @@ const auditS = (await getPage(opsS2, "/console/audit")).html;
 check("settings changes are in the audit log with who and why", /Start small this week/.test(auditS) && /agent refunds: on, lower limit none -&gt; on, lower limit ₦5,000/.test(auditS), auditS.match(/agent refunds:[^<]+/g));
 check("audit attributes the refund to the console limit", /within agent limit ₦5,000 set in the Ops Console/.test(auditS));
 
+// ---------- Verify once per chat (conversation id sent by Chord, not the model) ----------
+console.log("\nVerification per conversation");
+await seed();
+const chat = async (conv: string | null) => {
+  const cl = new Client({ name: "chat-" + conv, version: "1.0.0" });
+  await cl.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+    requestInit: { headers: { Authorization: "Bearer test-mcp-token", ...(conv ? { "X-Chord-Conversation-Id": conv } : {}) } },
+  }));
+  return async (name: string, args: Record<string, unknown> = {}) => {
+    const r: any = await cl.callTool({ name, arguments: args });
+    return { ...JSON.parse(r.content?.[0]?.text ?? "{}") };
+  };
+};
+const chatA = await chat("conv-A"), chatB = await chat("conv-B"), noConv = await chat(null);
+await chatA("start_verification", { phone: ADA });
+const vA = await chatA("verify_rider", { phone: ADA, code: codeIn(await lastSms(ADA)) });
+check("verified in chat A, marked as verified for the chat", vA.ok === true && vA.chat_verified === true, vA);
+const laterTurn = await chatA("list_recent_fundings", {});
+check("a later turn in chat A works without the session value", laterTurn.ok === true && Array.isArray(laterTurn.fundings), laterTurn);
+const otherChat = await chatB("list_recent_fundings", {});
+check("chat B cannot use chat A's verification", otherChat.result === "verification_required" || otherChat.error === "verification_required" || otherChat.ok === false, otherChat);
+const noId = await noConv("list_recent_fundings", {});
+check("without a conversation id, no session means not verified", noId.ok === false, noId);
+const sessionStill = await noConv("list_recent_fundings", { session: vA.session });
+check("the session value still works on its own", sessionStill.ok === true, sessionStill);
+const lastCall: any = await store.get("mcp:last_call");
+check("tool log records where the conversation id came from", lastCall?.conversation_id_found?.startsWith("none") || /header:x-chord-conversation-id/.test(lastCall?.conversation_id_found ?? ""), lastCall?.conversation_id_found);
+const convRec: any = await store.get(`conv:${(await import("node:crypto")).createHash("sha256").update("conv:conv-A").digest("hex").slice(0, 32)}`);
+check("the chat's verification window slides with activity", convRec && Date.parse(convRec.expiresAt) > Date.now() + 14 * 60_000, convRec);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 await client.close();
 server.close();

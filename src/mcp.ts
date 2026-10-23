@@ -33,7 +33,7 @@ const safe = <A,>(tool: string, fn: (a: A) => Promise<unknown>) => async (a: A) 
 };
 
 const phone = z.string().describe("The phone number the rider says is registered on their Railow account, e.g. 08010000001");
-const session = z.string().describe("The session value returned by verify_rider. Required for every account tool.");
+const session = z.string().optional().describe("The session value returned by verify_rider. If you no longer have it, leave it out: the server recognises a chat that is already verified and replies verification_required if it is not.");
 const fundingId = z.string().describe("funding_id from list_recent_fundings");
 
 export function buildMcpServer(policy: AgentPolicy) {
@@ -56,40 +56,40 @@ export function buildMcpServer(policy: AgentPolicy) {
     description: "The verified rider's wallet balance and most recent top-ups (newest first): amount, time, and whether the wallet was credited. Use it to confirm which funding they mean.",
     inputSchema: { session, limit: z.number().int().min(1).max(10).optional() },
     annotations: { readOnlyHint: true },
-  }, safe("list_recent_fundings", ({ session, limit }: { session: string; limit?: number }) => d.listRecentFundings(session, limit)));
+  }, safe("list_recent_fundings", ({ session, limit }: { session?: string; limit?: number }) => d.listRecentFundings(session, limit)));
 
   s.registerTool("check_payment", {
     title: "Check a funding with the payment provider",
     description: "Asks the payment provider what actually happened to this funding and compares it with the wallet. Returns `result`: paid_not_credited | paid_and_credited | failed | abandoned | pending | reversed | amount_mismatch | not_found, plus a case_ref. If ok=false the provider could not be reached: never guess the outcome.",
     inputSchema: { session, funding_id: fundingId },
     annotations: { readOnlyHint: true },
-  }, safe("check_payment", ({ session, funding_id }: { session: string; funding_id: string }) => d.checkPayment(session, funding_id)));
+  }, safe("check_payment", ({ session, funding_id }: { session?: string; funding_id: string }) => d.checkPayment(session, funding_id)));
 
   s.registerTool("credit_wallet", {
     title: "Credit the wallet for a confirmed payment",
     description: "Credits the wallet ONLY if the provider confirms the payment succeeded, the amount matches, it was never credited before, and it is under the automatic limit. The server re-verifies everything itself and refuses otherwise. Safe to call twice: a repeat returns already_credited.",
     inputSchema: { session, funding_id: fundingId },
     annotations: { idempotentHint: true, destructiveHint: false },
-  }, safe("credit_wallet", ({ session, funding_id }: { session: string; funding_id: string }) => d.creditWallet(session, funding_id)));
+  }, safe("credit_wallet", ({ session, funding_id }: { session?: string; funding_id: string }) => d.creditWallet(session, funding_id)));
 
   s.registerTool("refund_payment", {
     title: "Refund a payment (within the business's limit)",
     description: "Use when a verified rider wants money back: a duplicate charge, or a payment they want returned instead of kept in the wallet. The server refunds it itself only if the business allows agent refunds, the amount is within the limit, Paystack confirms the payment, and the case is low risk. Otherwise it automatically sends the request to the payments team and returns a case_ref. Either way, report what the result says; never promise an outcome beforehand.",
     inputSchema: { session, funding_id: fundingId, rider_statement: z.string().describe("The rider's request in their own words") },
-  }, safe("refund_payment", ({ session, funding_id, rider_statement }: { session: string; funding_id: string; rider_statement: string }) => d.agentRefund(session, funding_id, rider_statement, policy)));
+  }, safe("refund_payment", ({ session, funding_id, rider_statement }: { session?: string; funding_id: string; rider_statement: string }) => d.agentRefund(session, funding_id, rider_statement, policy)));
 
   s.registerTool("open_claim", {
     title: "Send a case to the payments team",
     description: "Use for problems that need a person but are not a simple refund request: an amount mismatch, a payment the provider cannot find, a credit refused over the limit, or a reversal the rider's bank should handle. The server gathers evidence and puts the claim in the payments team's review queue. You only get a case_ref back. Never promise an outcome.",
     inputSchema: { session, funding_id: fundingId, rider_statement: z.string().describe("The rider's request in their own words") },
-  }, safe("open_claim", ({ session, funding_id, rider_statement }: { session: string; funding_id: string; rider_statement: string }) => d.openClaim(session, funding_id, rider_statement)));
+  }, safe("open_claim", ({ session, funding_id, rider_statement }: { session?: string; funding_id: string; rider_statement: string }) => d.openClaim(session, funding_id, rider_statement)));
 
   s.registerTool("case_status", {
     title: "Case status",
     description: "Where a case stands, for the verified rider who owns it, by case reference. Use it when a rider asks for an update.",
     inputSchema: { session, case_ref: z.string() },
     annotations: { readOnlyHint: true },
-  }, safe("case_status", ({ session, case_ref }: { session: string; case_ref: string }) => d.caseStatus(session, case_ref)));
+  }, safe("case_status", ({ session, case_ref }: { session?: string; case_ref: string }) => d.caseStatus(session, case_ref)));
 
   return s;
 }

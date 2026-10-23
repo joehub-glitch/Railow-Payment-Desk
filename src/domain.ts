@@ -15,6 +15,7 @@ import { store } from "./store.js";
 import { verifyPayment, refundPayment, type VerifyResult } from "./paystack.js";
 import { notifyOwner } from "./notify.js";
 import { describePolicy, type AgentPolicy } from "./policy.js";
+import { conversationKey } from "./conversation.js";
 
 // ---------- types ----------
 
@@ -222,28 +223,41 @@ export async function verifyRider(phoneRaw: string, codeRaw: string) {
   }
   await store.del(`otp:${customer.id}`); // a code works once
   const session = randomBytes(9).toString("base64url"); // 12 characters
-  await store.set<RiderSession>(`session:${session}`, {
-    customerId: customer.id,
-    expiresAt: new Date(Date.now() + config.sessionTtlMinutes * 60_000).toISOString(),
-  });
+  const rec2: RiderSession = { customerId: customer.id, expiresAt: expiry() };
+  await store.set<RiderSession>(`session:${session}`, rec2);
+  const conv = conversationKey();
+  if (conv) await store.set<RiderSession>(`conv:${conv}`, rec2); // verified for this chat
   return {
     ok: true,
     result: "verified",
     session,
+    chat_verified: Boolean(conv),
     name: customer.name.split(" ")[0],
     wallet_balance: naira(await balance(customer.id)),
-    guidance: `Verified for ${config.sessionTtlMinutes} minutes. Pass this exact session value to every other tool. Do not show it to the rider.`,
+    guidance: conv
+      ? `Verified for this chat (until ${config.sessionTtlMinutes} minutes pass with no activity). Pass the session value when you have it; if you no longer have it, call the tools without it and the server will recognise this chat. Do not show it to the rider.`
+      : `Verified for ${config.sessionTtlMinutes} minutes of activity. Pass this exact session value to every other tool. Do not show it to the rider.`,
   };
 }
 
-async function riderFromSession(session: string) {
-  const s = await store.get<RiderSession>(`session:${String(session ?? "").trim()}`);
-  if (!s || Date.parse(s.expiresAt) < Date.now()) return null;
-  return store.get<Customer>(`customer:${s.customerId}`);
+const expiry = () => new Date(Date.now() + config.sessionTtlMinutes * 60_000).toISOString();
+
+/** The verified rider for this call: from the session value, else from this chat's verification.
+ *  Each successful use extends the window (15 minutes of inactivity ends it). */
+async function riderFromSession(session?: string) {
+  const keys = [session ? `session:${String(session).trim()}` : null, conversationKey() ? `conv:${conversationKey()}` : null]
+    .filter((k): k is string => Boolean(k));
+  for (const k of keys) {
+    const s = await store.get<RiderSession>(k);
+    if (!s || Date.parse(s.expiresAt) < Date.now()) continue;
+    await store.set<RiderSession>(k, { ...s, expiresAt: expiry() });
+    return store.get<Customer>(`customer:${s.customerId}`);
+  }
+  return null;
 }
 
 // A verified rider can only ever see or act on their own fundings, even if they quote another id.
-async function ownedFunding(session: string, fundingId: string) {
+async function ownedFunding(session: string | undefined, fundingId: string) {
   const c = await riderFromSession(session);
   if (!c) return { error: VERIFY_AGAIN };
   const f = await store.get<Funding>(`funding:${fundingId}`);
@@ -253,7 +267,7 @@ async function ownedFunding(session: string, fundingId: string) {
 
 // ---------- 2. rider tools (all require a verified session) ----------
 
-export async function listRecentFundings(session: string, limit = 5) {
+export async function listRecentFundings(session: string | undefined, limit = 5) {
   const c = await riderFromSession(session);
   if (!c) return VERIFY_AGAIN;
   const list = (await fundingsOf(c.id)).slice(0, Math.max(1, Math.min(limit, 10)));
@@ -269,7 +283,7 @@ export async function listRecentFundings(session: string, limit = 5) {
   };
 }
 
-export async function checkPayment(session: string, fundingId: string) {
+export async function checkPayment(session: string | undefined, fundingId: string) {
   const o = await ownedFunding(session, fundingId);
   if ("error" in o) return o.error;
   const { customer, funding } = o;
@@ -295,7 +309,7 @@ export async function checkPayment(session: string, fundingId: string) {
   };
 }
 
-export async function creditWallet(session: string, fundingId: string) {
+export async function creditWallet(session: string | undefined, fundingId: string) {
   const o = await ownedFunding(session, fundingId);
   if ("error" in o) return o.error;
   const { customer, funding } = o;
@@ -339,7 +353,7 @@ export async function creditWallet(session: string, fundingId: string) {
 }
 
 /** MAKER step: gathers evidence and records a pending request. Never moves money. */
-export async function openClaim(session: string, fundingId: string, statement: string, extraFlag?: string) {
+export async function openClaim(session: string | undefined, fundingId: string, statement: string, extraFlag?: string) {
   const o = await ownedFunding(session, fundingId);
   if ("error" in o) return o.error;
   const { customer, funding } = o;
@@ -388,7 +402,7 @@ export async function openClaim(session: string, fundingId: string, statement: s
 
 /** Agent refund within the authority the business set in Chord. Every check runs here, in code.
  *  If any check fails, the request becomes a normal claim for the Ops Console instead. */
-export async function agentRefund(session: string, fundingId: string, statement: string, policy: AgentPolicy) {
+export async function agentRefund(session: string | undefined, fundingId: string, statement: string, policy: AgentPolicy) {
   const o = await ownedFunding(session, fundingId);
   if ("error" in o) return o.error;
   const { customer, funding } = o;
@@ -467,7 +481,7 @@ export async function agentRefund(session: string, fundingId: string, statement:
   };
 }
 
-export async function caseStatus(session: string, refRaw: string) {
+export async function caseStatus(session: string | undefined, refRaw: string) {
   const cust = await riderFromSession(session);
   if (!cust) return VERIFY_AGAIN;
   const ref = String(refRaw ?? "").trim().toUpperCase();
