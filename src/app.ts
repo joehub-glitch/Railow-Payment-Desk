@@ -62,7 +62,7 @@ app.delete("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ er
 app.use("/console", consoleRouter);
 app.get("/", (_req, res) => res.redirect(302, "/console"));
 
-app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.10", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
+app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.11", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
 
 // Alert log: copies of the "claim needs review" alerts, for demos without email set up.
 // Every tool call the agent made (newest last), and what Chord sent with the latest one.
@@ -155,13 +155,14 @@ app.get("/ops/diagnose", opsOnly, async (_req, res) => {
   }
   let paystack: { ok: boolean; detail: string };
   try { paystack = await pingPaystack(); } catch (e) { paystack = { ok: false, detail: redact(String((e as Error)?.message ?? e)).slice(0, 300) }; }
-  res.json({ version: "2026-10-23.10", env, upstash_raw, database, paystack });
+  res.json({ version: "2026-10-23.11", env, upstash_raw, database, paystack });
 });
 
 // Last resort: log the error, and on ops pages show the reason instead of a bare 500.
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   console.error("[unhandled]", req.path, err);
   if (res.headersSent) return;
-  const detail = req.path.startsWith("/ops") ? redact(String((err as Error)?.message ?? err)).slice(0, 300) : undefined;
+  const showDetail = req.path.startsWith("/ops") || req.originalUrl.startsWith("/console");
+  const detail = showDetail ? redact(String((err as Error)?.message ?? err)).slice(0, 300) : undefined;
   res.status(500).json({ error: "internal_error", detail, hint: req.path.startsWith("/ops") ? "Open /ops/diagnose?token=... to check each dependency." : undefined });
 });

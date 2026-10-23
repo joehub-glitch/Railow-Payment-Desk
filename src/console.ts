@@ -158,7 +158,7 @@ consoleRouter.get("/", requireLogin, async (req: Authed, res) => {
   const row = async (c: d.Case) => {
     const f = await store.get<d.Funding>(`funding:${c.fundingId}`);
     const cu = await store.get<d.Customer>(`customer:${c.customerId}`);
-    const approvals = c.claim ? `${c.claim.approvals.length} of ${c.claim.requiredApprovals}` : "";
+    const approvals = c.claim ? `${(c.claim.approvals ?? []).length} of ${c.claim.requiredApprovals}` : "";
     return `<tr><td><a href="/console/case/${esc(c.ref)}">${esc(c.ref)}</a></td><td>${esc(cu?.name)}</td><td>${esc(naira(f?.amountKobo ?? 0))}</td>
       <td class="${esc(c.claim?.riskLevel)}">${esc(c.claim?.riskLevel)}</td><td><span class="chip">${esc(statusLabel[c.status])}</span></td>
       <td>${c.status === "awaiting_owner" ? esc(approvals) : esc(c.claim?.decision?.by ?? "")}</td><td class="muted">${esc(d.lagosTime(c.updatedAt))}</td></tr>`;
@@ -184,12 +184,12 @@ consoleRouter.get("/case/:ref", requireLogin, async (req: Authed, res) => {
   if (!det) return res.status(404).send(page("Not found", `<h1>No case ${esc(req.params.ref)}</h1>`, req.session));
   const { c, funding, customer, balance, ledger } = det;
   const cl = c.claim;
-  const iApproved = cl?.approvals.some((a) => a.user === req.session!.user);
+  const iApproved = (cl?.approvals ?? []).some((a) => a.user === req.session!.user);
   const ageDays = customer ? Math.floor((Date.now() - Date.parse(customer.createdAt)) / 864e5) : 0;
 
   const decide = c.status === "awaiting_owner" && cl
     ? `<div class="card"><h2 style="margin-top:0">Decision</h2>
-       <p>${cl.requiredApprovals === 2 ? `This claim is ${esc(naira(funding?.amountKobo ?? 0))}, so it needs <b>two different approvers</b>. Approvals so far: <b>${cl.approvals.length} of 2</b>.` : "One approval executes this claim."}</p>
+       <p>${cl.requiredApprovals === 2 ? `This claim is ${esc(naira(funding?.amountKobo ?? 0))}, so it needs <b>two different approvers</b>. Approvals so far: <b>${(cl.approvals ?? []).length} of 2</b>.` : "One approval executes this claim."}</p>
        ${iApproved ? `<p class="muted">You have already approved. A different approver must give the second approval.</p>` : ""}
        <form method="post" action="/console/case/${esc(c.ref)}/decide"><input type="hidden" name="csrf" value="${esc(req.session!.csrf)}">
        <label class="k">Reason (required, recorded in the audit log)</label><textarea name="reason" rows="3" required minlength="5"></textarea>
@@ -201,10 +201,10 @@ consoleRouter.get("/case/:ref", requireLogin, async (req: Authed, res) => {
       <div><div class="k">Risk</div><div class="${esc(cl.riskLevel)}">${esc(cl.riskLevel)}</div></div>
       <div><div class="k">Amount</div>${esc(naira(funding?.amountKobo ?? 0))}</div>
       <div><div class="k">Payment provider says</div>${esc(cl.providerStatus)}</div>
-      <div><div class="k">${cl.decision ? "Decided by" : "Approvals"}</div>${cl.decision ? `${esc(cl.decision.by)}: ${esc(cl.decision.action)}` : `${cl.approvals.length} of ${cl.requiredApprovals}`}</div></div>
+      <div><div class="k">${cl.decision ? "Decided by" : "Approvals"}</div>${cl.decision ? `${esc(cl.decision.by)}: ${esc(cl.decision.action)}` : `${(cl.approvals ?? []).length} of ${cl.requiredApprovals ?? 1}`}</div></div>
       ${cl.decision ? `<p class="muted">Reason: ${esc(cl.decision.reason)}</p>` : ""}
       <h2>Rider says</h2><p>"${esc(cl.statement)}"</p>
-      <h2>Evidence (computed by the server)</h2><ul>${cl.flags.length ? cl.flags.map((f) => `<li>${esc(humanFlag(f))}</li>`).join("") : "<li>No risk flags</li>"}</ul>
+      <h2>Evidence (computed by the server)</h2><ul>${(cl.flags ?? []).length ? (cl.flags ?? []).map((f) => `<li>${esc(humanFlag(f))}</li>`).join("") : "<li>No risk flags</li>"}</ul>
       <h2>Recommendation</h2><p>${esc(cl.recommendation)}</p></div>` : `<div class="card"><p class="muted">No claim on this case; the desk handled it.</p></div>`}
     ${decide}
     <div class="card"><h2 style="margin-top:0">Rider and payment</h2><div class="grid">
@@ -216,7 +216,7 @@ consoleRouter.get("/case/:ref", requireLogin, async (req: Authed, res) => {
       <div><div class="k">Wallet credited</div>${esc(d.lagosTime(funding?.creditedAt ?? null) ?? "No")}</div>
       <div><div class="k">Refund</div>${funding?.refund ? esc(`${funding.refund.id} at ${d.lagosTime(funding.refund.at)}`) : "None"}</div></div>
       <h2>Wallet ledger</h2>${ledger.length ? `<div class="wrap"><table><tr><th>When</th><th>Type</th><th>Amount</th><th>Note</th></tr>${ledger.slice(-10).reverse().map((e) => `<tr><td class="muted">${esc(d.lagosTime(e.at))}</td><td>${esc(e.type)}</td><td>${esc(naira(e.amountKobo))}</td><td>${esc(e.note)}</td></tr>`).join("")}</table></div>` : `<p class="muted">No entries.</p>`}</div>
-    <div class="card"><h2 style="margin-top:0">Timeline</h2><ul>${c.events.slice().reverse().map((e) => `<li><span class="muted">${esc(d.lagosTime(e.at))}</span> ${esc(e.what)}</li>`).join("")}</ul></div>`;
+    <div class="card"><h2 style="margin-top:0">Timeline</h2><ul>${(c.events ?? []).slice().reverse().map((e) => `<li><span class="muted">${esc(d.lagosTime(e.at))}</span> ${esc(e.what)}</li>`).join("")}</ul></div>`;
   res.send(page(c.ref, body, req.session, typeof req.query.msg === "string" ? req.query.msg : undefined));
 });
 
