@@ -27,7 +27,7 @@ if (cmd === "links") {
     const reference = `RW_${p.key}_${stamp}`;
     const url = await initializePayment(`demo+${p.key}@example.com`, p.payNaira * 100, reference);
     refs[p.key] = reference;
-    console.log(`\n${p.key}\n  pay ₦${p.payNaira.toLocaleString()} -> ${p.outcome}\n  ${url}`);
+    console.log(`\n${p.key}\n  pay ₦${p.payNaira.toLocaleString()} with ${p.card} (${p.outcome})\n  ${url}`);
   }
   await writeFile(file, JSON.stringify(refs, null, 2));
   console.log(`\nSaved ${Object.keys(refs).length} references to ${file}. Pay each link, then run: npm run seed:apply`);

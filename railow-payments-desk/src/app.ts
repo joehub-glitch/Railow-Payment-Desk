@@ -6,7 +6,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { buildMcpServer } from "./mcp.js";
 import { config } from "./config.js";
 import { store, storeKind } from "./store.js";
-import { seed, type ScenarioKey } from "./seed.js";
+import { seed, livePaymentPlan, type ScenarioKey } from "./seed.js";
+import { initializePayment } from "./paystack.js";
 
 export const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -37,13 +38,55 @@ app.post("/mcp", bearer(config.mcpBearerToken), async (req, res) => {
 app.get("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ error: "method_not_allowed" }));
 app.delete("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ error: "method_not_allowed" }));
 
-app.get("/health", (_req, res) => res.json({ ok: true, brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
+app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.2", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
 
 // Owner inbox: the out-of-band messages (with approval codes) for demos without email set up.
 app.get("/ops/inbox", opsOnly, async (_req, res) => res.json(await store.listAll("owner_inbox")));
 
-// Reset the demo data. Body may map scenario keys to real Paystack test references.
-app.post("/ops/reseed", opsOnly, async (req, res) => {
-  const refs = (req.body?.live_refs ?? {}) as Partial<Record<ScenarioKey, string>>;
-  res.json(await seed(refs));
-});
+// --- Demo seeding from the browser (no local setup, the Paystack key never leaves the server) ---
+// Step 1: /ops/seed-links?token=...  creates one Paystack TEST checkout per live scenario.
+// Step 2: pay each link with the card shown.
+// Step 3: /ops/reseed?token=...      loads the demo riders using those references.
+// Run /ops/reseed again any time to reset the demo between recordings.
+
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+const seedLinks = async (_req: Request, res: Response) => {
+  if (config.paystackMode !== "live" || !config.paystackSecret.startsWith("sk_test_")) {
+    return res.status(400).send("Set PAYSTACK_MODE=live and a TEST secret key (sk_test_...) first.");
+  }
+  const stamp = Date.now().toString(36);
+  const refs: Record<string, string> = {};
+  const rows: string[] = [];
+  for (const p of livePaymentPlan) {
+    const reference = `RW_${p.key}_${stamp}`;
+    try {
+      const url = await initializePayment(`railow.demo+${p.key}@example.com`, p.payNaira * 100, reference);
+      refs[p.key] = reference;
+      rows.push(`<tr><td>${esc(p.key)}</td><td>₦${p.payNaira.toLocaleString()}</td><td>${esc(p.card)}</td><td>${esc(p.outcome)}</td><td><a href="${esc(url)}" target="_blank">Pay</a></td></tr>`);
+    } catch (e) {
+      rows.push(`<tr><td>${esc(p.key)}</td><td colspan="4">Could not create link: ${esc(String((e as Error).message))}</td></tr>`);
+    }
+  }
+  await store.set("live_refs", refs);
+  res.send(`<!doctype html><meta charset="utf-8"><title>Seed links</title>
+<body style="font-family:system-ui;max-width:900px;margin:2rem auto;padding:0 1rem">
+<h2>Paystack test checkouts</h2>
+<p>Open each link, pay with the card shown (expiry <b>09/27</b>, any PIN/OTP Paystack asks for is in its test docs).
+When all are paid, open <code>/ops/reseed?token=…</code> to load the demo riders.</p>
+<table border="1" cellpadding="6" style="border-collapse:collapse">
+<tr><th>Scenario</th><th>Pay</th><th>Card</th><th>Expected</th><th></th></tr>${rows.join("")}</table></body>`);
+};
+app.get("/ops/seed-links", opsOnly, seedLinks);
+app.post("/ops/seed-links", opsOnly, seedLinks);
+
+// Reset the demo data. Uses references passed in the body, else the ones saved by /ops/seed-links.
+const reseed = async (req: Request, res: Response) => {
+  const saved = (await store.get<Record<string, string>>("live_refs")) ?? {};
+  const refs = (req.body?.live_refs ?? saved) as Partial<Record<ScenarioKey, string>>;
+  const result = await seed(refs);
+  await store.set("live_refs", refs); // seed() clears the store, so keep the references for next time
+  res.json({ ...result, simulated: livePaymentPlan.filter((p) => !refs[p.key]).map((p) => p.key) });
+};
+app.get("/ops/reseed", opsOnly, reseed);
+app.post("/ops/reseed", opsOnly, reseed);

@@ -43,14 +43,20 @@ are off by default (creating one returns `ESCALATION_RULES_DEPRECATED`). A rider
 funded my wallet" never trips a ₦ limit even when the tool shows ₦150,000. **Workaround:** limits
 live in the MCP server. **Feedback:** let handover conditions reference tool-result fields.
 
-## 4. Proactive follow-up into the simulator conversation
-*Status: docs suggest not supported; asked TSG Labs on 21 Oct, awaiting reply.*
+## 4. No proactive follow-up into the simulator conversation
+*Status: confirmed by TSG Labs on 23 Oct ("limitations to scheduled tasks especially in the
+context of the simulator").*
 
-The simulator connects as a partner app. The partner chat guide says the initial contract supports
-synchronous text sends and paginated history only, and does not mention outbound messages.
-Scheduled `MESSAGE` tasks list WhatsApp and Direct Line routes but not partner threads.
-**Workaround:** pending payments are explained; the rider rechecks with their case reference.
-*(Update with TSG's answer.)*
+**What happened.** I wanted the desk to recheck a pending payment and update the rider without them
+writing again. Reading the docs first, the simulator connects as a partner app, and the partner
+chat guide describes only synchronous replies and paginated history, while scheduled `MESSAGE`
+tasks list WhatsApp and Direct Line routes but not partner threads.
+**How I found the cause.** Docs review, then asked TSG Labs before building it (21 Oct); they
+confirmed the limitation (23 Oct).
+**Workaround.** Pending payments are explained with a case reference, and the rider checks back
+with `case_status`. Nothing in the build depends on outbound messages.
+**Feedback for Chord.** State in the scheduling and partner-chat guides which delivery routes reach
+partner-app threads, so builders know before designing around proactive follow-ups.
 
 ## 5. Tools cannot verify who the rider is
 *Status: confirmed in docs.*
@@ -74,4 +80,6 @@ to the rightful owner of a verified payment; refunds need an owner code the mode
 
 | Date | Credits left | What used them |
 |---|---|---|
-| 21 Oct | 0 | waiting for TSG to add credits |
+| 21 Oct | 0 | waiting for TSG to add credits; emailed account address and design question |
+| 22 Oct | 0 | no reply yet; kept building offline |
+| 23 Oct | 50 | credits added, simulator access via Connected Apps; 5-day window starts |

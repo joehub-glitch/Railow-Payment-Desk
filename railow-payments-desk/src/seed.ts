@@ -13,7 +13,7 @@ const N = (naira: number) => naira * 100;
 export type ScenarioKey =
   | "ada_paid_not_credited" | "bayo_already_credited" | "chioma_failed" | "dapo_pending"
   | "emeka_spent_then_claims" | "funke_duplicate_a" | "funke_duplicate_b" | "gbenga_over_limit"
-  | "halima_provider_timeout" | "ife_amount_mismatch";
+  | "halima_provider_timeout" | "ife_amount_mismatch" | "kemi_refundfail";
 
 interface Scenario {
   key: ScenarioKey;
@@ -69,14 +69,26 @@ export const scenarios: Scenario[] = [
     customer: { id: "cus_ife", phone: "+2348010000009", name: "Ife Ogunleye", ageDays: 120, startBalance: 900 },
     funding: { id: "fnd_ife_1", amount: 4000, minsAgo: 25 },
     provider: { status: "success", amountKobo: N(3500), paidAt: ago(24), channel: "card" } },
+  // Credited and unused, like Bayo, but paid with Paystack's "refund fails" test card, so an approved
+  // refund genuinely fails at Paystack and the desk must restore the wallet.
+  { key: "kemi_refundfail", live: true,
+    customer: { id: "cus_kemi", phone: "+2348010000010", name: "Kemi Balogun", ageDays: 260, startBalance: 1500 },
+    funding: { id: "fnd_kemi_1", amount: 6000, minsAgo: 70, credited: true },
+    provider: { status: "success", amountKobo: N(6000), paidAt: ago(69), channel: "card" } },
 ];
 
-// Paystack test-mode amounts for live seeding: what to PAY at checkout for each scenario.
-// (For the mismatch scenario you pay less than the funding expects; for "failed" use a failing test card.)
+// Paystack test cards (expiry 09/27): https://paystack.com/docs/payments/test-payments/
+const CARD_SUCCESS = "4084 0840 8408 4081, CVV 408";
+const CARD_DECLINED = "4084 0800 0000 5408, CVV 001";
+const CARD_REFUND_FAILS = "4084 0800 0067 1803, CVV 180";
+
+// What to PAY at checkout for each live scenario, and with which card.
+// (For the mismatch scenario you pay less than the funding expects.)
 export const livePaymentPlan = scenarios.filter((s) => s.live).map((s) => ({
   key: s.key,
   payNaira: s.provider.amountKobo / 100,
-  outcome: s.provider.status === "failed" ? "use a Paystack test card that FAILS" : "use the Paystack SUCCESS test card",
+  card: s.provider.status === "failed" ? CARD_DECLINED : s.key === "kemi_refundfail" ? CARD_REFUND_FAILS : CARD_SUCCESS,
+  outcome: s.provider.status === "failed" ? "should be DECLINED" : "should succeed",
 }));
 
 export async function seed(liveRefs: Partial<Record<ScenarioKey, string>> = {}) {

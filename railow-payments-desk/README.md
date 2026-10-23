@@ -86,12 +86,12 @@ npm run dev     # http://localhost:3000/mcp, demo riders seeded automatically
 1. Create a free Upstash Redis database (serverless instances do not share memory).
 2. Import this repo into Vercel and set the environment variables from `.env.example`.
    Use a Paystack **test** key (`sk_test_…`) and `PAYSTACK_MODE=live`.
-3. Seed the demo riders: `npm run seed:links`, pay each printed checkout link as instructed
-   (Paystack test cards), then `npm run seed:apply`. Scenarios Paystack test mode cannot produce on
-   demand (a payment stuck in pending, a provider timeout) use references prefixed `SIM_` and say so.
-4. Check `https://<your-app>/health`. To reset the demo between recordings:
-   `curl -X POST "https://<your-app>/ops/reseed?token=$OPS_TOKEN" -H 'content-type: application/json' -d "{\"live_refs\": $(cat seed/live-refs.json)}"`
-   (an empty body reseeds with every scenario simulated, which is handy for a quick smoke test).
+3. Seed the demo riders from your browser (the Paystack key never leaves the server):
+   open `https://<your-app>/ops/seed-links?token=<OPS_TOKEN>`, pay each checkout with the test card
+   shown, then open `https://<your-app>/ops/reseed?token=<OPS_TOKEN>`. Scenarios Paystack test mode
+   cannot produce on demand (a payment stuck in pending, a provider timeout) use references prefixed
+   `SIM_` and say so. Re-open the reseed link to reset the demo between recordings.
+4. Check `https://<your-app>/health`.
 
 If Vercel's TypeScript build gives you trouble, any Node host works: `npm start` (Render, Railway, Fly).
 
@@ -111,6 +111,43 @@ Riders, wallets and the ledger are a mock merchant system I host. Payments are r
 **test-mode** transactions, except the two `SIM_` scenarios above. In production the "payment"
 side of this problem often sits with a bank rather than a gateway; that integration is out of
 scope and called out in the go-live note.
+
+## Vision: the bank side as a second agent
+
+Today, when a merchant and its bank disagree about a payment, the exceptions travel as a file of
+failed transactions and are resolved by hand. The next step for this desk replaces that file with
+**two agents, one per company, that resolve exceptions with each other** and bring in people only
+when they disagree.
+
+**How it would work across two companies**
+
+1. **The bank runs its own agent** (a "Settlement Desk") in its own Chord account, connected to its
+   own systems: transaction status lookup and reversal status.
+2. **The bank issues Railow an API key** scoped to that one agent.
+3. **Railow's desk gets one more tool, `ask_bank`.** When Paystack and the wallet ledger cannot
+   explain a case, the tool messages the bank's agent through Chord's chat API and receives the
+   answer in the same call.
+4. **Each company keeps its own data, rules and approvals.** Only the question and the answer cross
+   the boundary:
+   > *Railow:* Status of the ₦5,000 debit at 2:14pm, account ending 4417?
+   > *Bank:* Debited, not settled to Railow. Reversal started at 2:20pm.
+5. **Disagreements become one joint case** for a person on each side, with both sides' evidence,
+   instead of a line in tomorrow's file.
+
+**What has to be true for it to work**
+
+- **The bank decides what to share from the API key, never from the message.** Railow's agent could
+  be manipulated, so the bank's tools return only transactions on Railow's own collection account,
+  whatever the question claims.
+- **Use agents for exceptions, not for routine status checks.** A plain API or worker service is
+  faster and cheaper for "what is the status of X". Agents earn their place where the answer needs
+  investigation: conflicting records, missing references, deciding what happens next.
+- **A data-sharing agreement and an audit trail on both sides**, since two regulated companies are
+  exchanging customer transaction data.
+
+**Why Chord fits.** Chord already lets teammates in one workspace consult each other, and exposes
+a chat API one system can use to message another company's teammate. The cross-company version
+needs a scoped key and the guardrails above, not new infrastructure.
 
 ## How I used AI tools
 
