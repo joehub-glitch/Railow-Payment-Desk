@@ -35,9 +35,11 @@ export const config = {
   ownerEmail: process.env.OWNER_EMAIL ?? "",
   ownerEmailFrom: process.env.OWNER_EMAIL_FROM ?? "Railow Payments Desk <onboarding@resend.dev>",
 
-  // Storage: Upstash Redis when configured, in-memory otherwise (local only).
-  upstashUrl: cleanUrl(process.env.UPSTASH_REDIS_REST_URL),
-  upstashToken: clean(process.env.UPSTASH_REDIS_REST_TOKEN),
+  // Storage: Upstash-compatible Redis REST API when configured, in-memory otherwise (local only).
+  // Vercel's Redis storage integration sets KV_REST_API_URL / KV_REST_API_TOKEN; a standalone
+  // Upstash database uses UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN. KV_* wins if both exist.
+  upstashUrl: cleanUrl(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL),
+  upstashToken: clean(process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN),
 };
 
 export const naira = (kobo: number) => `₦${(kobo / 100).toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
