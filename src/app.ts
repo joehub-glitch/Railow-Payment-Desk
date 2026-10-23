@@ -24,11 +24,23 @@ const opsOnly = (req: Request, res: Response, next: NextFunction) => {
   res.status(401).json({ error: "unauthorized" });
 };
 
+// What Chord sends with each tool call (header names and safe values, plus any _meta), so we can
+// see whether it passes a conversation id. Secrets are never stored.
+const SECRET_HEADERS = /authorization|cookie|token|secret|key/i;
+async function recordCaller(req: Request) {
+  const body = req.body as { method?: string; params?: { name?: string; _meta?: unknown } } | undefined;
+  if (body?.method !== "tools/call") return;
+  const headers = Object.fromEntries(Object.entries(req.headers).map(([k, v]) =>
+    [k, SECRET_HEADERS.test(k) ? "(hidden)" : String(v).slice(0, 120)]));
+  await store.set("mcp:last_call", { at: new Date().toISOString(), tool: body.params?.name ?? null, meta: body.params?._meta ?? null, headers });
+}
+
 app.post("/mcp", bearer(config.mcpBearerToken), async (req, res) => {
   // The refund limit comes from the custom header the business set on this server in Chord.
   // The ops team's console switch can only make it stricter.
   const chord = parsePolicy(req.headers[LIMIT_HEADER]);
   await recordPolicySeen(chord).catch((e) => console.error("[policy] could not record", e));
+  await recordCaller(req).catch((e) => console.error("[caller] could not record", e));
   const server = buildMcpServer(await effectivePolicy(chord));
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on("close", () => { transport.close(); server.close(); });
@@ -48,9 +60,12 @@ app.delete("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ er
 app.use("/console", consoleRouter);
 app.get("/", (_req, res) => res.redirect(302, "/console"));
 
-app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.8", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
+app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.9", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
 
 // Alert log: copies of the "claim needs review" alerts, for demos without email set up.
+// Every tool call the agent made (newest last), and what Chord sent with the latest one.
+app.get("/ops/tool-log", opsOnly, async (_req, res) => res.json({ last_call: await store.get("mcp:last_call"), calls: (await store.listAll("toollog")).slice(-60) }));
+
 app.get("/ops/inbox", opsOnly, async (_req, res) => res.json(await store.listAll("owner_inbox")));
 
 // --- Demo seeding from the browser (no local setup, the Paystack key never leaves the server) ---
@@ -138,7 +153,7 @@ app.get("/ops/diagnose", opsOnly, async (_req, res) => {
   }
   let paystack: { ok: boolean; detail: string };
   try { paystack = await pingPaystack(); } catch (e) { paystack = { ok: false, detail: redact(String((e as Error)?.message ?? e)).slice(0, 300) }; }
-  res.json({ version: "2026-10-23.8", env, upstash_raw, database, paystack });
+  res.json({ version: "2026-10-23.9", env, upstash_raw, database, paystack });
 });
 
 // Last resort: log the error, and on ops pages show the reason instead of a bare 500.

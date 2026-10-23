@@ -26,12 +26,31 @@ guide describes passing a verified sender to MCP tools: the model fills in the p
 - **Rider identity:** `start_verification` sends a one-time code to the phone *registered on the
   Railow account*; `verify_rider` returns a 15-minute session that every other tool requires. Same
   answer whether or not an account exists, so the chat cannot be used to discover customers.
-- **Approvals:** removed the approve tool from the agent entirely (see note 2 for where they went).
+- **Approvals:** removed the approve tool from the agent entirely (see note 3 for where they went).
 **Feedback for Chord.** Pass the channel-verified sender (the WhatsApp number Chord already knows)
 to tool calls in a field the model cannot set. Builders would not need to bolt on their own OTP, and
 approvals from a registered approver's phone would become safe.
 
-## 2. A business that wants a person to approve the agent's bigger actions has to build its own back office
+## 2. On the next message, the agent took back a wallet credit it had really made
+*Status: seen in the simulator (23 Oct, 7:58pm). Confirm with `/ops/tool-log` before submitting.*
+
+**What happened.** Ada verified and the agent credited ₦5,000 in one turn ("your balance is now
+₦6,200, case RW-1001", figures that match the server). She replied "none thanks". The agent then
+sent her a new verification code and wrote: "Nothing has been confirmed on your wallet yet, so
+please ignore the credit, balance and case reference I mentioned before." The credit was real.
+**How I found the cause.** The skill says never state an outcome "you did not get from a tool in
+this conversation". On the second turn the agent could see its own earlier text but, it seems, not
+the tool results behind it, so it decided its own message was unsupported and retracted it. It had
+also lost the verification session, so it started verifying again. Earlier the same day, with two
+conflicting skills attached, it also told a rider a code was wrong without calling the check.
+**Workaround.** The skill now says earlier outcomes stand and must never be retracted, a "thanks"
+gets a one-line close with no tools, and re-verification happens only for a new question. Added an
+ops tool-call log so every claim the agent makes can be matched to a real tool call.
+**Feedback for Chord.** Document what a skill-based teammate keeps between turns (tool results,
+tool arguments such as a session value). If tool results are dropped, keep at least a summary, or
+let a tool mark a value as conversation state that is passed back on later turns.
+
+## 3. A business that wants a person to approve the agent's bigger actions has to build its own back office
 *Status: checked in the app (23 Oct): teammate settings, the MCP server's actions, the Escalated /
 Needs review filters and Activity → Needs you.*
 
@@ -48,7 +67,7 @@ same shape as Fin's human-in-the-loop approvals: Fin sends the request to "an ex
 your choice", the business decides there, and its system calls a per-conversation callback URL so
 Fin resumes the conversation with the outcome. Two differences matter:
 - Fin has the **callback**: the decision flows back into the same conversation. Chord has no
-  equivalent I could find, so the rider only hears the outcome when they write again (note 5).
+  equivalent I could find, so the rider only hears the outcome when they write again (note 6).
 - Fin still assumes the business **has** a system to decide in. Many Nigerian SMEs, such as a
   pharmacy, a school or a small logistics firm, do not, so each builder rebuilds the same approval
   screen.
@@ -69,7 +88,7 @@ legal threats or abuse cause a full handover.
 This gives every builder maker-checker without a back office, and keeps the money decision next to
 the conversation it came from.
 
-## 3. A business setting (the refund limit) can only be set as a raw header
+## 4. A business setting (the refund limit) can only be set as a raw header
 *Status: confirmed in the app UI (23 Oct, Admin → Channels & Tools → Add MCP server).*
 
 **What happened.** I wanted the business owner to set, in Chord, how much the agent may refund on
@@ -88,7 +107,7 @@ stricter control wins and every change is audit-logged.
 validation and a change history. Business owners would then configure agent authority without
 typing headers.
 
-## 4. No documented way to set handover conditions for a skill-based teammate
+## 5. No documented way to set handover conditions for a skill-based teammate
 *Status: confirmed in docs and app UI (21 Oct). Runtime behaviour still to test.*
 
 **What I found.** The Escalation rules guide defines conditions as procedures tagged `escalation`.
@@ -101,7 +120,7 @@ Collaboration, Allowed links, Tools, Channels and Lifecycle, with no escalation 
 **Feedback for Chord.** One page stating where a skill-based teammate's handover conditions live,
 with a worked example.
 
-## 5. No proactive follow-up into the simulator conversation
+## 6. No proactive follow-up into the simulator conversation
 *Status: confirmed by TSG Labs on 23 Oct ("limitations to scheduled tasks especially in the
 context of the simulator").*
 
@@ -116,7 +135,7 @@ confirmed the limitation (23 Oct).
 **Feedback for Chord.** State in the scheduling and partner-chat guides which delivery routes reach
 partner-app threads, so builders know before designing around proactive follow-ups.
 
-## 6. Amount-based escalation cannot see amounts from tools
+## 7. Amount-based escalation cannot see amounts from tools
 *Status: confirmed in docs. A design constraint, not a runtime failure; keep only if space allows.*
 
 `AMOUNT_THRESHOLD` matches amounts written in the customer's message, and stored escalation rules
@@ -124,7 +143,7 @@ are off by default (creating one returns `ESCALATION_RULES_DEPRECATED`). A rider
 funded my wallet" never trips a ₦ limit even when the tool shows ₦150,000. **Workaround:** limits
 live in the MCP server. **Feedback:** let handover conditions reference tool-result fields.
 
-## 7. Deployment: the database error hid the real cause (not Chord; keep only if space allows)
+## 8. Deployment: the database error hid the real cause (not Chord; keep only if space allows)
 *Status: hit on 23 Oct.*
 
 **What happened.** Seeding failed with `Internal Server Error`, then `res.map is not a function`.
@@ -153,3 +172,4 @@ off auto-pipelining so provider errors surface verbatim, and kept the diagnose p
 | 22 Oct | 0 | no reply yet; kept building offline |
 | 23 Oct | 50 | credits added, simulator access via Connected Apps; 5-day window starts |
 | 23 Oct | 49.24 | first simulator test (paid but not credited, then repeat credit) |
+| 23 Oct | 48 | v2 tests: skill conflict loop (Ife), credit then retraction (Ada) |
