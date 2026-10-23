@@ -1,0 +1,30 @@
+{
+  "name": "railow-payments-desk",
+  "version": "1.0.0",
+  "description": "Chord MCP server: wallet-funding claims desk for WhatsApp (TSG Labs build exercise)",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx test/scenarios.ts",
+    "seed:links": "tsx scripts/seed-live.ts links",
+    "seed:apply": "tsx scripts/seed-live.ts apply"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@upstash/redis": "^1.39.0",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}
