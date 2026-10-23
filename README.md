@@ -138,7 +138,7 @@ Here that system is the **Railow Ops Console** (`/console`):
 
 ```bash
 npm install
-npm test        # 109 end-to-end checks over real MCP/HTTP and the console, mock mode, no keys needed
+npm test        # 110 end-to-end checks over real MCP/HTTP and the console, mock mode, no keys needed
 npm run dev     # MCP at http://localhost:3000/mcp, console at /console, demo riders seeded
 ```
 

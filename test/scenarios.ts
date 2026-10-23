@@ -371,6 +371,9 @@ check("a credit comes with a receipt line to quote", credited.result === "credit
 const fake = await noConv("list_recent_fundings", { session: "V-2222-2222" });
 check("a made-up ref is refused", fake.ok === false, fake);
 
+const rawList = await fetch(`${base}/mcp`, { method: "POST", headers: { Authorization: "Bearer test-mcp-token", "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/list" }) });
+check("MCP replies declare charset=utf-8 (so ✅ and ₦ survive)", /charset=utf-8/i.test(rawList.headers.get("content-type") ?? ""), rawList.headers.get("content-type"));
+
 console.log(`\n${passed} passed, ${failed} failed`);
 await client.close();
 server.close();

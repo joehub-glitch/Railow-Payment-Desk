@@ -164,6 +164,13 @@ array and turned the provider's error message into `res.map is not a function`.
 **Fix.** Moved to a separate Redis database created through Vercel's storage integration, turned
 off auto-pipelining so provider errors surface verbatim, and kept the diagnose page.
 
+## Small: emoji and ₦ in tool results arrived garbled
+*Status: seen 23 Oct, 9:15pm.* My receipt line started with ✅; the agent's WhatsApp reply showed
+`âś…` (the UTF-8 bytes read as Windows-1250). The MCP SDK sends `application/json` without a charset
+and Chord's client (`Java-http-client`) did not default to UTF-8, which JSON requires. **Fix:** the
+server now sends `charset=utf-8` explicitly. **Feedback:** decode MCP responses as UTF-8 by default;
+₦ and Yoruba/Igbo/Hausa diacritics will hit the same bug.
+
 ## Observed in the app (21 Oct), not problems
 
 - Credits showed 0 on login, so nothing could be tested until TSG added them.

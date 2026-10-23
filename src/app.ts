@@ -37,7 +37,31 @@ async function recordCaller(req: Request) {
   await store.set("mcp:last_call", { at: new Date().toISOString(), tool: body.params?.name ?? null, conversation_id_found, meta: body.params?._meta ?? null, headers });
 }
 
+// JSON is UTF-8, but Chord's client decoded our replies as a single-byte charset ("✅" arrived as
+// "âś…"). Say charset=utf-8 explicitly on every MCP response.
+function forceUtf8(res: Response) {
+  const fix = (v: unknown) => (typeof v === "string" && /^(application\/json|text\/event-stream)/i.test(v) && !/charset/i.test(v) ? `${v}; charset=utf-8` : v);
+  const fixHeaders = (h: unknown): unknown => {
+    if (Array.isArray(h)) {
+      if (h.length && Array.isArray(h[0])) return (h as [string, unknown][]).map(([k, v]) => [k, /^content-type$/i.test(k) ? fix(v) : v]);
+      const flat = [...(h as unknown[])];
+      for (let i = 0; i < flat.length; i += 2) if (/^content-type$/i.test(String(flat[i]))) flat[i + 1] = fix(flat[i + 1]);
+      return flat;
+    }
+    if (h && typeof h === "object") return Object.fromEntries(Object.entries(h as Record<string, unknown>).map(([k, v]) => [k, /^content-type$/i.test(k) ? fix(v) : v]));
+    return h;
+  };
+  const orig = res.writeHead.bind(res) as (...a: unknown[]) => Response;
+  (res as unknown as { writeHead: (...a: unknown[]) => Response }).writeHead = (...args: unknown[]) => {
+    const ct = res.getHeader("content-type");
+    if (ct) res.setHeader("content-type", String(fix(String(ct))));
+    if (args.length >= 2) args[args.length - 1] = fixHeaders(args[args.length - 1]);
+    return orig(...args);
+  };
+}
+
 app.post("/mcp", bearer(config.mcpBearerToken), async (req, res) => {
+  forceUtf8(res);
   // The refund limit comes from the custom header the business set on this server in Chord.
   // The ops team's console switch can only make it stricter.
   const chord = parsePolicy(req.headers[LIMIT_HEADER]);
@@ -62,7 +86,7 @@ app.delete("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ er
 app.use("/console", consoleRouter);
 app.get("/", (_req, res) => res.redirect(302, "/console"));
 
-app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.13", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
+app.get("/health", (_req, res) => res.json({ ok: true, version: "2026-10-23.14", brand: config.brand, paystack_mode: config.paystackMode, store: storeKind }));
 
 // Alert log: copies of the "claim needs review" alerts, for demos without email set up.
 // Every tool call the agent made (newest last), and what Chord sent with the latest one.
@@ -155,7 +179,7 @@ app.get("/ops/diagnose", opsOnly, async (_req, res) => {
   }
   let paystack: { ok: boolean; detail: string };
   try { paystack = await pingPaystack(); } catch (e) { paystack = { ok: false, detail: redact(String((e as Error)?.message ?? e)).slice(0, 300) }; }
-  res.json({ version: "2026-10-23.13", env, upstash_raw, database, paystack });
+  res.json({ version: "2026-10-23.14", env, upstash_raw, database, paystack });
 });
 
 // Last resort: log the error, and on ops pages show the reason instead of a bare 500.
