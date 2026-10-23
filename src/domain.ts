@@ -222,7 +222,7 @@ export async function verifyRider(phoneRaw: string, codeRaw: string) {
     return fail(rec.attempts >= config.otpMaxAttempts ? "Code not accepted. Too many attempts: the rider must request a new code later." : "Code not accepted. Ask the rider to check the SMS and type the 6 digits again.");
   }
   await store.del(`otp:${customer.id}`); // a code works once
-  const session = randomBytes(9).toString("base64url"); // 12 characters
+  const session = chatRef();
   const rec2: RiderSession = { customerId: customer.id, expiresAt: expiry() };
   await store.set<RiderSession>(`session:${session}`, rec2);
   const conv = conversationKey();
@@ -234,18 +234,32 @@ export async function verifyRider(phoneRaw: string, codeRaw: string) {
     chat_verified: Boolean(conv),
     name: customer.name.split(" ")[0],
     wallet_balance: naira(await balance(customer.id)),
-    guidance: conv
-      ? `Verified for this chat (until ${config.sessionTtlMinutes} minutes pass with no activity). Pass the session value when you have it; if you no longer have it, call the tools without it and the server will recognise this chat. Do not show it to the rider.`
-      : `Verified for ${config.sessionTtlMinutes} minutes of activity. Pass this exact session value to every other tool. Do not show it to the rider.`,
+    chat_ref_line: `Verified ✅ (ref ${session})`,
+    guidance: `Verified. Put this exact line in your reply to the rider: "Verified ✅ (ref ${session})". On every later message in this chat, pass ${session} as session; if you can no longer see this result, read the ref from your own earlier message. It stays valid until ${config.sessionTtlMinutes} minutes pass with no activity.`,
   };
 }
+
+// A short, readable verification reference, e.g. V-7KQ2-M9XD (no 0/O/1/I to avoid misreading).
+// Chord does not pass a conversation id to tools and the agent loses tool results between turns, so
+// the agent writes this reference in its reply; on later turns it reads it back from its own message.
+const REF_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+function chatRef() {
+  const b = randomBytes(8);
+  const chars = [...b].map((x) => REF_ALPHABET[x % REF_ALPHABET.length]).join("");
+  return `V-${chars.slice(0, 4)}-${chars.slice(4)}`;
+}
+const normRef = (s: string) => {
+  const t = String(s ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const core = t.startsWith("V") && t.length === 9 ? t.slice(1) : t;
+  return core.length === 8 ? `V-${core.slice(0, 4)}-${core.slice(4)}` : String(s ?? "").trim();
+};
 
 const expiry = () => new Date(Date.now() + config.sessionTtlMinutes * 60_000).toISOString();
 
 /** The verified rider for this call: from the session value, else from this chat's verification.
  *  Each successful use extends the window (15 minutes of inactivity ends it). */
 async function riderFromSession(session?: string) {
-  const keys = [session ? `session:${String(session).trim()}` : null, conversationKey() ? `conv:${conversationKey()}` : null]
+  const keys = [session ? `session:${normRef(session)}` : null, conversationKey() ? `conv:${conversationKey()}` : null]
     .filter((k): k is string => Boolean(k));
   for (const k of keys) {
     const s = await store.get<RiderSession>(k);

@@ -31,24 +31,34 @@ guide describes passing a verified sender to MCP tools: the model fills in the p
 to tool calls in a field the model cannot set. Builders would not need to bolt on their own OTP, and
 approvals from a registered approver's phone would become safe.
 
-## 2. On the next message, the agent took back a wallet credit it had really made
-*Status: seen in the simulator (23 Oct, 7:58pm). Confirm with `/ops/tool-log` before submitting.*
+## 2. On the next message, the agent took back money actions it had really made
+*Status: reproduced in 4 simulator chats (23 Oct, 7:40–8:00pm); confirmed with the server's tool log.*
 
-**What happened.** Ada verified and the agent credited ₦5,000 in one turn ("your balance is now
-₦6,200, case RW-1001", figures that match the server). She replied "none thanks". The agent then
-sent her a new verification code and wrote: "Nothing has been confirmed on your wallet yet, so
-please ignore the credit, balance and case reference I mentioned before." The credit was real.
-**How I found the cause.** The skill says never state an outcome "you did not get from a tool in
-this conversation". On the second turn the agent could see its own earlier text but, it seems, not
-the tool results behind it, so it decided its own message was unsupported and retracted it. It had
-also lost the verification session, so it started verifying again. Earlier the same day, with two
-conflicting skills attached, it also told a rider a code was wrong without calling the check.
-**Workaround.** The skill now says earlier outcomes stand and must never be retracted, a "thanks"
-gets a one-line close with no tools, and re-verification happens only for a new question. Added an
-ops tool-call log so every claim the agent makes can be matched to a real tool call.
-**Feedback for Chord.** Document what a skill-based teammate keeps between turns (tool results,
-tool arguments such as a session value). If tool results are dropped, keep at least a summary, or
-let a tool mark a value as conversation state that is passed back on later turns.
+**What happened.** Within one turn everything worked: verify, check, credit or refund. On the
+rider's next message the agent asked for a new code and "corrected" itself:
+- Ada, after "none thanks": *"please ignore the credit, balance and case reference I mentioned."*
+- Bayo, after "what is my balance" (his ₦3,000 refund had gone through): *"I shouldn't have told you
+  your refund was submitted … I hadn't confirmed that with our system."*
+- Gbenga typed "RW-1004 update" and got a new code instead of an update.
+The tool log shows the credit and refund calls succeeded (`credit_wallet → credited`,
+`refund_payment → refunded`); the retractions were false.
+**How I found the cause.** I logged every tool call and the request Chord sends with it. There is
+no conversation or thread id in any header and no `_meta` (only the bearer token, my custom
+header, and the hosting provider's own headers, from `Java-http-client/23.0.2`). So the server
+cannot tell which chat a call belongs to, and the agent apparently cannot see earlier tool results
+on a new turn, only its own earlier text. With "never state an outcome you did not get from a tool
+in this conversation" in the skill, it judged its own true messages unsupported and took them back.
+A skill rule ("earlier outcomes stand", "call the tools without a session") did not fix it.
+**Workaround.** Put the state where the agent can see it: its own messages.
+- Verification returns a readable ref (`V-7KQ2-M9XD`); the agent ends that reply with
+  `Verified ✅ (ref …)` and reuses it on later turns. It expires after 15 quiet minutes.
+- Every money result carries a receipt line (`✅ Railow confirmed: ₦5,000 credited … Case RW-1001.`)
+  that the agent quotes; the skill says ✅ lines came from the server and are never retracted.
+**Feedback for Chord.**
+1. Send a stable conversation id with every tool call (a header or MCP `_meta`), so servers can
+   keep per-chat state such as "this rider is verified" without showing anything to the customer.
+2. Document whether tool results stay in the model's context on later turns. If they are dropped,
+   keep a summary, because an agent that cannot see its own evidence will disown it.
 
 ## 3. A business that wants a person to approve the agent's bigger actions has to build its own back office
 *Status: checked in the app (23 Oct): teammate settings, the MCP server's actions, the Escalated /

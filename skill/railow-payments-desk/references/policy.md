@@ -17,7 +17,7 @@ to the payments team, who decide in their own signed-in system with the evidence
   number has a Railow account, we've sent a code to it."
 - A code expires after 10 minutes, works once, and locks after 3 wrong attempts. If it locks,
   ask the rider to request a new code in 15 minutes.
-- A verified session lasts 15 minutes. After that, verify again.
+- Verification lasts until 15 minutes pass with no activity in the chat. Reuse the ref from your `Verified ✅ (ref …)` line; verify again only when a tool returns `verification_required`.
 
 ## Case table
 

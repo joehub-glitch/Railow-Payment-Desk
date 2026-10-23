@@ -358,6 +358,19 @@ check("tool log records where the conversation id came from", lastCall?.conversa
 const convRec: any = await store.get(`conv:${(await import("node:crypto")).createHash("sha256").update("conv:conv-A").digest("hex").slice(0, 32)}`);
 check("the chat's verification window slides with activity", convRec && Date.parse(convRec.expiresAt) > Date.now() + 14 * 60_000, convRec);
 
+// ---------- Readable chat reference and receipts (no conversation id from Chord) ----------
+console.log("\nChat reference and receipts");
+await seed();
+await noConv("start_verification", { phone: ADA });
+const vRef = await noConv("verify_rider", { phone: ADA, code: codeIn(await lastSms(ADA)) });
+check("verification gives a readable ref like V-XXXX-XXXX", /^V-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/.test(vRef.session) && vRef.chat_ref_line === `Verified ✅ (ref ${vRef.session})`, vRef);
+const typedLoosely = await noConv("list_recent_fundings", { session: ` ${vRef.session.toLowerCase().replace(/-/g, " ")} ` });
+check("the ref works even if copied loosely (case, spaces)", typedLoosely.ok === true, typedLoosely);
+const credited = await noConv("credit_wallet", { session: vRef.session, funding_id: "fnd_ada_1" });
+check("a credit comes with a receipt line to quote", credited.result === "credited" && /^✅ Railow confirmed: ₦5,000 credited to your wallet\. Balance ₦6,200\. Case RW-\d+\.$/.test(credited.receipt), credited.receipt);
+const fake = await noConv("list_recent_fundings", { session: "V-2222-2222" });
+check("a made-up ref is refused", fake.ok === false, fake);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 await client.close();
 server.close();

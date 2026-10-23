@@ -22,9 +22,27 @@ const logCall = (tool: string, out: unknown) => {
     .catch((e) => console.error("[toollog]", e));
 };
 
+// A one-line receipt for every money outcome. The agent quotes it word for word, so on later turns
+// (when it can no longer see tool results) its own earlier message shows what the server confirmed.
+const RECEIPT_RULE = "Quote the receipt line word for word in your reply. Lines starting with ✅ Railow confirmed were confirmed by the server: never retract them later.";
+function withReceipt(out: unknown) {
+  const o = out as Record<string, unknown> | null;
+  if (!o || typeof o !== "object") return out;
+  const ref = o.case_ref ? ` Case ${o.case_ref}.` : "";
+  const r: Record<string, string> = {
+    credited: `✅ Railow confirmed: ${o.amount} credited to your wallet. Balance ${o.wallet_balance}.${ref}`,
+    refunded: `✅ Railow confirmed: ${o.amount} refund sent to your card or bank. Balance ${o.wallet_balance}.${ref}`,
+    sent_to_review: `✅ Railow confirmed: your request is with the payments team.${ref}`,
+    already_credited: `✅ Railow confirmed: already credited at ${o.credited_at}. Balance ${o.wallet_balance}.${ref}`,
+    already_refunded: `✅ Railow confirmed: already refunded at ${o.refunded_at}.${ref}`,
+  };
+  const line = r[String(o.result)];
+  return line ? { ...o, receipt: line, receipt_rule: RECEIPT_RULE } : out;
+}
+
 // Wrap every tool so an unexpected exception becomes a clear, safe answer instead of a crash.
 const safe = <A,>(tool: string, fn: (a: A) => Promise<unknown>) => async (a: A) => {
-  try { const out = await fn(a); await logCall(tool, out); return json(out); }
+  try { const out = withReceipt(await fn(a)); await logCall(tool, out); return json(out); }
   catch (e) {
     console.error("[tool error]", e);
     await logCall(tool, { ok: false, error: "internal_error" });
@@ -33,7 +51,7 @@ const safe = <A,>(tool: string, fn: (a: A) => Promise<unknown>) => async (a: A) 
 };
 
 const phone = z.string().describe("The phone number the rider says is registered on their Railow account, e.g. 08010000001");
-const session = z.string().optional().describe("The session value returned by verify_rider. If you no longer have it, leave it out: the server recognises a chat that is already verified and replies verification_required if it is not.");
+const session = z.string().optional().describe("The verification reference from verify_rider, e.g. V-7KQ2-M9XD. If you cannot see the tool result any more, copy it from your own earlier message (\"Verified ✅ (ref …)\"). Valid until 15 minutes pass with no activity.");
 const fundingId = z.string().describe("funding_id from list_recent_fundings");
 
 export function buildMcpServer(policy: AgentPolicy) {
