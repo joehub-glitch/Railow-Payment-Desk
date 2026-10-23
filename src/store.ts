@@ -43,7 +43,12 @@ class RedisStore implements Store {
   async listPush<T>(k: string, v: T) { await this.r.rpush(this.p + k, JSON.stringify(v)); }
   async listAll<T>(k: string) {
     const raw = await this.r.lrange(this.p + k, 0, -1);
-    return raw.map((x) => (typeof x === "string" ? JSON.parse(x) : x)) as T[];
+    // Upstash already decodes JSON items, so a stored string such as "RW-1001" comes back as plain
+    // text. Only decode what is still encoded.
+    return raw.map((x) => {
+      if (typeof x !== "string") return x;
+      try { return JSON.parse(x); } catch { return x; }
+    }) as T[];
   }
   async keys(prefix: string) {
     const out: string[] = [];
