@@ -33,7 +33,7 @@ class MemoryStore implements Store {
 class RedisStore implements Store {
   // Created on first use, so a bad URL shows up as a readable error instead of crashing the server.
   private _r?: Redis;
-  private get r() { return (this._r ??= new Redis({ url: config.upstashUrl, token: config.upstashToken })); }
+  private get r() { return (this._r ??= new Redis({ url: config.upstashUrl, token: config.upstashToken, enableAutoPipelining: false })); }
   private p = "railow:"; // namespace so a shared database stays tidy
   async get<T>(k: string) { return (await this.r.get<T>(this.p + k)) ?? null; }
   async set<T>(k: string, v: T) { await this.r.set(this.p + k, v); }
