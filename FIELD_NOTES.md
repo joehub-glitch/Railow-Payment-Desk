@@ -1,132 +1,60 @@
-# Deployment field notes: Railow Payments Desk on Chord
+# Field notes: deploying Railow Payments Desk on Chord
 
-Built and tested 21–24 Oct 2026 in the TSG Labs WhatsApp simulator. Three problems taught me the
-most; the rest are short notes at the end. Each one: what happened, how I found the cause, what I
-did, and what I'd change in Chord.
+I built and tested this between 21 and 24 October in the TSG Labs WhatsApp simulator. These are the three problems I learned the most from, then a few smaller ones.
 
----
+## 1. The agent took back refunds it had actually made
 
-## 1. On the next message, the agent took back money actions it had really made
+This was the one that worried me most. In a single turn everything worked: the rider verified, the agent checked Paystack, then credited or refunded. But on the rider's next message, the agent asked for a new code and started "correcting" itself.
 
-**What happened.** Within a single turn everything worked: verify the rider, check Paystack,
-credit or refund. On the rider's *next* message the agent asked for a new code and "corrected"
-itself. I reproduced it in four chats on 23 Oct:
-- Ada, after "none thanks": *"please ignore the credit, balance and case reference I mentioned."*
-- Bayo, after "what is my balance" (his ₦3,000 refund had gone through): *"I shouldn't have told you
-  your refund was submitted … I hadn't confirmed that with our system."*
-- Gbenga typed "RW-1004 update" and got a new code instead of an update.
+After Ada said "none thanks", it told her to "ignore the credit, balance and case reference I mentioned before." Bayo asked "what is my balance" after his ₦3,000 refund had gone through, and it said it "shouldn't have told you your refund was submitted." Gbenga typed "RW-1004 update" and just got another code. I saw this in four chats on 23 October.
 
-The server's tool log shows the calls succeeded (`credit_wallet → credited`,
-`refund_payment → refunded`). The retractions were false, and in a payments product a false "your
-refund didn't happen" is as damaging as a false "it did".
+The credit and the refund were real; my server's log showed both calls succeeding. For a payments product, telling someone their refund didn't happen when it did is about as bad as the opposite.
 
-**How I found the cause.** I logged every tool call and the request Chord sends with it. There is no
-conversation or thread id anywhere: no header, no MCP `_meta`. Only my bearer token, my custom
-header and the host's own headers arrive (client: `Java-http-client/23.0.2`). So the server cannot
-tell which chat a call belongs to. And on a new turn the agent apparently sees its own earlier text
-but not the tool results behind it. My skill said "never state an outcome you did not get from a
-tool in this conversation", so the agent judged its own true messages unsupported and withdrew
-them. Adding skill rules ("earlier outcomes stand") did not fix it.
+To find out why, I logged every tool call along with whatever Chord sends with it. There's no conversation ID anywhere, not in the headers and not in the MCP metadata, so my server couldn't tell which chat a call came from. It also looked like the agent could see its own earlier messages on a new turn but not the tool results behind them. My skill told it never to state an outcome it hadn't got from a tool, so it decided its own true messages were unsupported and withdrew them. Adding a line to the skill saying "earlier outcomes stand" didn't change anything.
 
-**What I did.** Put the state where the agent *can* see it: in its own messages.
-- Verification returns a short, readable reference (`V-7KQ2-M9XD`). The agent ends that reply with
-  `Verified ✅ (ref …)` and passes the ref on later turns; it expires after 15 quiet minutes, and a
-  made-up ref is refused.
-- Every money result carries a receipt line (`✅ Railow confirmed: ₦5,000 credited to your wallet.
-  Balance ₦6,200. Case RW-1001.`). The agent quotes it, and the skill says ✅ lines came from the
-  server and are never retracted.
+What fixed it was putting the proof somewhere the agent can see: in its own messages. When a rider verifies, the server returns a short reference like V-7KQ2-M9XD, and the agent writes "Verified ✅ (ref …)" in the chat and reuses it on later turns. It runs out after 15 minutes of no messages, and a made-up one doesn't work. Every credit or refund also comes back with a one-line receipt ("✅ Railow confirmed: ₦5,000 credited…") that the agent quotes. After that change, a follow-up message went through with no new code and no retraction.
 
-After the change, a follow-up message reused the ref with no new code and no retraction.
+What I'd ask Chord for: send a stable conversation ID with every tool call, and say clearly in the docs whether tool results are kept between turns. If they aren't, a short summary would help, because an agent that can't see its own evidence ends up doubting it.
 
-**What I'd change in Chord.**
-1. Send a stable conversation id with every tool call (a header or MCP `_meta`). Servers could then
-   keep per-chat state such as "this rider is verified" without showing anything to the customer.
-2. Document whether tool results stay in the model's context on later turns. If they are dropped,
-   keep a summary: an agent that cannot see its own evidence will disown it.
+## 2. There's no way to hold an action for someone to approve
 
-## 2. Approving the agent's bigger actions needs a back office Chord doesn't provide
+Railow's rule is normal for payments: the agent can refund small, low-risk cases itself, and anything else needs a person, or two people from ₦50,000. I looked for a way to do that inside Chord: teammate settings, the MCP server's menu, the Escalated and Needs review filters, and Activity → Needs you. Those are all about conversations. I couldn't find anything that pauses a tool call until someone approves it.
 
-**What happened.** Railow's rule is ordinary for payments: the agent refunds low-risk cases up to
-₦100,000 itself; anything else goes to a person, and to two people from ₦50,000. I looked for a way
-to hold an action for approval inside Chord. Teammate settings offer Collaboration, Allowed links,
-Tools, Channels and Lifecycle; the MCP server's menu offers Health, Tools, Prompts, Edit and Delete,
-with no "requires approval" switch per tool. The inbox filters (Escalated, Needs review) and
-Activity → "Needs you" are about conversations, not about a pending tool call.
+For comparison, Fin sends the request to the business's own system, and when the decision is made that system calls back so Fin can continue the same conversation.
 
-**How I found it.** Went through each of those screens on 23 Oct, then compared with Fin. Fin's
-human-in-the-loop approvals send the request to "an external system of your choice", and that system
-calls a per-conversation callback URL so Fin resumes the chat with the outcome.
+I ended up building a small Ops Console next to the tools. Each claim shows the evidence, approving or rejecting needs a reason, two different people have to approve from ₦50,000, claims expire after 24 hours, and everything is logged. I took the approve tool away from the agent completely, so someone in the chat saying they're the owner has nothing to talk it into. The agent still stays in the conversation: it gives the rider a case reference and answers when they ask for an update.
 
-**What I did.** Built a small signed-in Ops Console next to the tools: each claim shows the
-evidence the server computed, approve or reject needs a written reason, two different approvers from
-₦50,000, claims expire after 24 hours, everything is audit-logged. Approvals never happen in the
-chat; the agent has no approve tool at all, so a customer claiming to be "the owner" has nothing to
-talk it into. The agent stays in the conversation: it gives a case reference and answers "any
-update?" with `case_status`.
+Two gaps are left. Chord can't call back into the chat, so the rider only hears the decision when they message again (TSG confirmed messages into the simulator are limited). And plenty of small Nigerian businesses don't have a back office to approve things in at all.
 
-Two gaps remain. Chord has no callback, so the rider only hears the decision when they write
-again (TSG Labs confirmed proactive messages into the simulator are limited). And many Nigerian
-SMEs, such as a pharmacy, a school or a small logistics firm, have no back office to approve in at
-all.
+What I'd ask Chord for: a way for a tool to say "waiting on a decision" with a callback that resumes the chat, and for businesses without their own system, built-in approvals in Needs you, with named approvers and an optional second approver above an amount.
 
-**What I'd change in Chord.**
-1. **A resume callback:** a tool can return "waiting on a decision"; the business's system later
-   posts the outcome to a per-conversation URL and the agent tells the customer in the same thread.
-2. **Built-in action approvals** for merchants without a back office: a tool, or a rule on it (e.g.
-   `refund_payment` above ₦X), returns "needs approval"; Chord shows it in "Needs you" with the
-   evidence, to named approvers, with an optional second approver above an amount; on approve it
-   runs the call and the agent continues the chat.
+## 3. The agent didn't know who it was talking to
 
-## 3. The agent couldn't tell who it was talking to
+In my first tests, the rider's phone number was just whatever they typed. Anyone who knew Ada's number could ask about Ada's wallet. My first design also let the owner approve refunds by messaging the same desk with a code, but in the simulator the owner's chat looked like any customer's.
 
-**What happened.** In my first simulator tests the rider's phone number was simply whatever they
-typed, so anyone who knew Ada's number could ask about Ada's balance. My first design also let the
-owner approve refunds by messaging the same desk with a one-time code, but the "owner" chat looked
-exactly like any customer chat.
+The simulator connects as a partner app, and Chord's partner chat guide says the sender ID is "an app-supplied customer reference, not proof of a Chord identity." I couldn't find a way to pass a verified sender through to tools; the model fills in the number itself.
 
-**How I found the cause.** The simulator connects as a partner app. Chord's partner chat guide says
-`sender_id` is "an app-supplied customer reference, not proof of a Chord identity", and no guide
-describes passing a verified sender to tools: the model fills in the phone number itself.
+So I built it around what the server can check. The code goes to the phone registered on the account, not to the chat, and the reply is the same whether or not the account exists, so you can't use the chat to find out who's a customer. Codes expire, work once and lock after three wrong tries, and a badly typed number gets caught before anything is sent.
 
-**What I did.** Redesigned around what the server can prove. `start_verification` sends a code to
-the phone *registered on the account* and gives the same answer whether or not an account exists, so
-the chat can't be used to discover customers. Codes expire, work once and lock after 3 tries; a
-mistyped number is caught by format before anything is sent. The approve tool was removed from the
-agent (see note 2).
+What I'd ask Chord for: pass the verified WhatsApp number to tools in a field the model can't change. Then most chats wouldn't need a code at all, and an approver's own phone could be trusted.
 
-**What I'd change in Chord.** Pass the channel-verified sender (on WhatsApp, the number Chord
-already knows) to tool calls in a field the model cannot set. Builders wouldn't need their own OTP
-for every chat, and a registered approver's phone could safely approve.
+## Smaller things
 
----
+The refund limit has to be typed into Custom headers as `X-Railow-Agent-Refund-Limit: 100,000`. A typo in the name does nothing, and an extra zero gives the agent ten times the authority. My server treats anything it can't read as off. It would be better if an MCP server could declare proper settings that Chord shows as fields.
 
-## Shorter notes
+When I updated the skill, the old and new versions were both attached at once with no warning. The agent mixed the two sets of instructions, told a rider a code was wrong without checking it, and went round in circles.
 
-- **Business settings are a raw header.** The owner sets the agent's refund limit by typing
-  `X-Railow-Agent-Refund-Limit: 100,000` into Custom headers. A typo in the name silently does
-  nothing; a typo in the amount grants ten times the authority. The server fails closed and caps it.
-  *Ask:* let an MCP server declare typed settings that Chord renders as validated fields.
-- **Two versions of a skill ran at once.** After an update, the old and new skill were both
-  attached with conflicting instructions, with no warning. The agent mixed them, told a rider a code
-  was wrong without checking it, and looped on verification. *Ask:* warn when two attached skills
-  overlap, or replace by name.
-- **✅ and ₦ arrived garbled.** Replies showed `âś…`: the MCP SDK sends `application/json` without a
-  charset and Chord's client didn't default to UTF-8, which JSON requires. Fixed by sending
-  `charset=utf-8`. *Ask:* decode as UTF-8 by default; ₦ and Yoruba/Igbo/Hausa letters hit the same bug.
-- **Handover conditions for skill teammates aren't documented.** The escalation guide uses legacy
-  procedures, which skills replace. *Ask:* one page with a worked example.
-- **Amount-based escalation reads only the customer's text**, not amounts from tools, so "I funded my
-  wallet" never trips a ₦ limit. Limits live in the server instead.
-- **Not Chord:** the live database decoded list items differently from my in-memory test store
-  ("RW-1001" crashed the console), and a suspended database account first showed as
-  `res.map is not a function`. A `/ops/diagnose` page that pings each dependency found both.
+My receipt line started with ✅ and showed up in WhatsApp as "âś…". The server wasn't saying the reply was UTF-8 and Chord's client guessed wrong. I fixed it on my side, but ₦ and Yoruba, Igbo or Hausa letters would hit the same problem.
 
-## Credits log
+I couldn't find documentation for where a skill-based teammate's handover rules go; the escalation guide still describes the older procedures.
 
-| Date | Credits left | What used them |
+Not Chord's fault, but worth saying: my tests passed on an in-memory store and then the live database read data slightly differently and crashed the console. A diagnose page that checks each dependency directly found that, and an earlier suspended database account.
+
+## Credits
+
+| Date | Credits left | Used on |
 |---|---|---|
-| 21–22 Oct | 0 | waiting for credits; built and tested offline |
-| 23 Oct | 50 | credits added; simulator access via Connected Apps |
-| 23 Oct | 49.24 | first simulator test |
-| 23 Oct | 48 | v2 tests: skill conflict loop, credit then retraction |
-| 24 Oct | 45 | full test round and the recorded demo |
+| 21–22 Oct | 0 | waiting for credits, building offline |
+| 23 Oct | 50 | credits added, simulator connected |
+| 23 Oct | 48 | first test rounds |
+| 24 Oct | 45 | full test round and demo recording |

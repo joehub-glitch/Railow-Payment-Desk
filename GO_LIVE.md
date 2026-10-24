@@ -1,25 +1,9 @@
-# Go-live note for the Railow owner
+# Go-live note for Railow
 
-**What it does.** When a rider says "I funded my wallet and it's not showing", the agent confirms
-it's really them (a code to the phone on their account, once per chat), checks the payment with
-Paystack and your wallet records, and credits a missed top-up once. Low-risk refunds up to the
-limit you set in Chord (₦100,000 in this demo) it does itself. Everything else becomes a claim in
-your Ops Console with the evidence; your team approves or rejects with a reason, two people from
-₦50,000. Every decision is logged.
+The desk handles one thing: a rider who topped up their wallet and something went wrong. It checks it's really them with a code to the phone on their account, looks at the payment on Paystack and at the wallet, and credits the wallet if the money came in but didn't show. It will refund on its own only for low-risk cases under the limit you set in Chord (₦100,000 in this demo). Everything else lands in the Ops Console for your team, and anything from ₦50,000 needs two people to approve.
 
-**What it does not do.** It never approves money in the chat, never refunds above your limit or
-for risky cases (money already spent, amount mismatch, Paystack unreachable), and doesn't handle
-ride or driver issues. Set the limit to 0 in Chord, or switch refunds off in the console, and it
-stops refunding at once.
+It won't approve anything from the chat, won't refund if the rider has already spent the money or the amounts don't match, and won't guess when Paystack isn't answering. Ride and driver problems go to a person. If you want it to stop refunding, set the limit to 0 in Chord or switch it off in the console.
 
-**Before going live**
-- Live Paystack keys, and connect it to your real wallet system instead of the demo ledger.
-- Your WhatsApp Business number through Chord, and a real SMS or WhatsApp-template provider for codes.
-- Named approvers with their own logins, and cover for when they're away; claims expire after 24h.
-- Start the limit low (or at 0) and raise it as you watch the audit log.
-- Agree who is alerted when Paystack is down or a refund fails; set data retention (NDPA).
+Before real riders use it, you'd need live Paystack keys and a link to your actual wallet system, your WhatsApp Business number on Chord, and a real SMS or WhatsApp provider for the codes. Decide who your approvers are and who covers for them, because claims expire after 24 hours. Start with a low limit, or zero, and raise it once you're comfortable with what you see in the audit log. Agree who gets told when Paystack is down or a refund fails, and how long you keep case records.
 
-**Real risks.** A wrong limit costs money. A Paystack outage means riders wait, not guesses. Codes
-are only as safe as the rider's SIM, so add your SIM-swap checks before raising limits. Riders
-learn a team decision when they write back, until Chord supports callbacks or WhatsApp templates
-are set up.
+The main risks: a limit set too high costs real money; when Paystack is down, riders will have to wait; and a code is only as safe as the rider's SIM, so keep your SIM-swap checks in place. Riders also only hear about a team decision when they message again, until Chord can send updates back into the chat.
