@@ -1,7 +1,7 @@
 # Go-live note for the Railow owner
 
 **What it does.** When a rider says "I funded my wallet and it's not showing", the desk first
-confirms it is really them with a code sent to the phone on their Railow account. It then checks
+confirms it is really them with a code sent to the phone on their Railow account (once per chat; it lapses after 15 quiet minutes). It then checks
 the payment with Paystack and your wallet records. If the payment went through and the wallet
 missed it, it credits the wallet on the spot, once. If the payment failed or is still pending, it
 explains that clearly. Refunds up to the limit you set in Chord (₦100,000 in this demo) are done

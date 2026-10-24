@@ -126,7 +126,7 @@ Here that system is the **Railow Ops Console** (`/console`):
 | Tool | Does |
 |---|---|
 | `start_verification` | Sends a one-time code to the phone registered on the account (same answer either way) |
-| `verify_rider` | Checks the code; returns a 15-minute session for the other tools |
+| `verify_rider` | Checks the code; returns a readable verification ref (e.g. `V-7KQ2-M9XD`) the agent shows once and reuses for the rest of the chat (15 quiet minutes ends it) |
 | `list_recent_fundings` | Balance and recent top-ups, credited or not |
 | `check_payment` | Paystack verify + ledger comparison → one of 8 outcomes, plus a case ref |
 | `credit_wallet` | Guarded, idempotent credit |
