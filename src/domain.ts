@@ -65,6 +65,8 @@ export function normalizePhone(raw: string): string {
   if (d.length === 10 && !d.startsWith("234")) d = "234" + d;
   return "+" + d;
 }
+/** A Nigerian mobile number: 0 + 10 digits locally, +234 + 10 digits starting 7, 8 or 9. */
+export const isValidNgMobile = (phone: string) => /^\+234[789]\d{9}$/.test(phone);
 const lastDigits = (phone: string) => phone.replace(/\D/g, "").slice(-4);
 
 async function customerByPhone(phone: string) {
@@ -173,6 +175,10 @@ const VERIFY_AGAIN = {
  *  the chat cannot be used to discover who has an account. The code is never returned. */
 export async function startVerification(phoneRaw: string) {
   const phone = normalizePhone(phoneRaw);
+  // Checking the format reveals nothing about which accounts exist, and catches typos early.
+  if (!isValidNgMobile(phone)) {
+    return { ok: false, result: "invalid_number", guidance: "That does not look like a Nigerian mobile number (11 digits starting with 0, e.g. 08012345678). Read back what they typed and ask them to check it. No code was sent." };
+  }
   const generic = {
     ok: true,
     result: "code_sent_if_account_exists",
