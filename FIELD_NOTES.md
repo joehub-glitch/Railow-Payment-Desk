@@ -10,17 +10,17 @@ After Ada said "none thanks", it told her to "ignore the credit, balance and cas
 
 The credit and the refund were real; my server's log showed both calls succeeding. For a payments product, telling someone their refund didn't happen when it did is about as bad as the opposite.
 
-To find out why, I logged every tool call along with whatever Chord sends with it. There's no conversation ID anywhere, not in the headers and not in the MCP metadata, so my server couldn't tell which chat a call came from. It also looked like the agent could see its own earlier messages on a new turn but not the tool results behind them. My skill told it never to state an outcome it hadn't got from a tool, so it decided its own true messages were unsupported and withdrew them. Adding a line to the skill saying "earlier outcomes stand" didn't change anything.
+To find out why, I logged every tool call along with whatever Chord sends with it. There's no conversation ID anywhere, not in the headers and not in the MCP metadata, so my server couldn't tell which chat a call came from. Chord does track conversations, since its outbound webhooks under Admin → Developer fire per conversation, but that never reaches the tool call. It also looked like the agent could see its own earlier messages on a new turn but not the tool results behind them. My skill told it never to state an outcome it hadn't got from a tool, so it decided its own true messages were unsupported and withdrew them. Adding a line to the skill saying "earlier outcomes stand" didn't change anything.
 
 What fixed it was putting the proof somewhere the agent can see: in its own messages. When a rider verifies, the server returns a short reference like V-7KQ2-M9XD, and the agent writes "Verified ✅ (ref …)" in the chat and reuses it on later turns. It runs out after 15 minutes of no messages, and a made-up one doesn't work. Every credit or refund also comes back with a one-line receipt ("✅ Railow confirmed: ₦5,000 credited…") that the agent quotes. After that change, a follow-up message went through with no new code and no retraction.
 
-What I'd ask Chord for: send a stable conversation ID with every tool call, and say clearly in the docs whether tool results are kept between turns. If they aren't, a short summary would help, because an agent that can't see its own evidence ends up doubting it.
+What I'd ask Chord for: pass the conversation ID it already has to every tool call, and say clearly in the docs whether tool results are kept between turns. If they aren't, a short summary would help, because an agent that can't see its own evidence ends up doubting it.
 
 ## 2. There's no way to hold an action for someone to approve
 
 Railow's rule is normal for payments: the agent can refund small, low-risk cases itself, and anything else needs a person, or two people from ₦50,000. I looked for a way to do that inside Chord: teammate settings, the MCP server's menu, the Escalated and Needs review filters, and Activity → Needs you. Those are all about conversations. I couldn't find anything that pauses a tool call until someone approves it.
 
-For comparison, Fin sends the request to the business's own system, and when the decision is made that system calls back so Fin can continue the same conversation.
+Admin → Developer has outbound webhooks (escalated, chat completed) and credentials for my own API calls, but nothing that lets my system post a decision back into a conversation. For comparison, Fin sends the request to the business's own system, and when the decision is made that system calls back so Fin can continue the same conversation.
 
 I ended up building a small Ops Console next to the tools. Each claim shows the evidence, approving or rejecting needs a reason, two different people have to approve from ₦50,000, claims expire after 24 hours, and everything is logged. I took the approve tool away from the agent completely, so someone in the chat saying they're the owner has nothing to talk it into. The agent still stays in the conversation: it gives the rider a case reference and answers when they ask for an update.
 
@@ -58,3 +58,4 @@ Not Chord's fault, but worth saying: my tests passed on an in-memory store and t
 | 23 Oct | 50 | credits added, simulator connected |
 | 23 Oct | 48 | first test rounds |
 | 24 Oct | 45 | full test round and demo recording |
+| 25 Oct | 43 | checks after recording |
