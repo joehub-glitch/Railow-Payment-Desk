@@ -67,8 +67,34 @@ scope and called out in the go-live note.
 
 ## How I used AI tools
 
-[To write before submitting: which AI tools you used and for what. The brief asks for this
-section explicitly.]
+I used Claude (Anthropic) throughout this build, mostly as an engineer and
+researcher working under my direction.
+
+The problem came from my day job. I've watched wallet top-up failures get
+handled with files and manual reversals, and I wanted to see how far an
+agent could take that before a person has to step in. I picked the case,
+named the business Railow, and set the rules: verify the rider first, never
+approve money from the chat, let the business set the agent's refund limit
+in Chord (I went with ₦100,000 for the demo), and send anything above that
+limit, or anything risky, to the demo payments team for review in the Ops
+Console.
+
+Claude wrote most of the code: the MCP server, the Paystack calls, the Ops
+Console and the tests. It also helped me read the Chord docs, compare the
+design with how Fin handles approvals, fix deployment problems on Vercel
+and Upstash, and put the write-ups and demo video together.
+
+I ran every test in the simulator myself, and most of the design changes
+came from what I saw there. In the first round I noticed the agent was
+trusting whatever phone number the rider typed, and that the "owner"
+approving in the chat looked like any customer, so we rebuilt identity and
+moved approvals out of the chat. Later I caught the agent asking for a new
+code on every message and taking back refunds it had already made. That
+became my main field note, and the fix (a reference and a receipt the agent
+can see in its own messages) came out of working through it together. I
+also pushed back when a suggestion didn't fit, for example on keeping the
+agent talking to the rider while the team decides, instead of handing the
+chat over.
 
 The agent itself runs entirely on Chord.
 
